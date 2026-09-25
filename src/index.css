@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0a0d0f;
+  --color-surface: #111619;
+  --color-hover: #151b1e;
+  --color-brand: #70d6a5;
+  --color-ink: #f4f6f5;
+  --color-mute: #8b9691;
+  --color-neg: #ff7b7b;
+
+  --font-sans: "Inter", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #0a0d0f;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(
+      circle at 10% 0%,
+      rgba(112, 214, 165, 0.07),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 90% 15%,
+      rgba(90, 120, 255, 0.045),
+      transparent 24%
+    ),
+    #0a0d0f;
+  color: #f4f6f5;
+  font-family: var(--font-sans);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+input,
+select {
+  color-scheme: dark;
+}
+
+select option {
+  background: #111619;
+  color: #f4f6f5;
+}
+
+select option:checked {
+  background: #1a2521;
+  color: #70d6a5;
+}
+
+/* Scrollbar */
+
+::-webkit-scrollbar {
+  width: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Efecto glass reutilizable */
+
+.glass {
+  background: rgba(17, 22, 25, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+/* Glass un poco más transparente */
+
+.glass-soft {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* Selección de texto */
+
+::selection {
+  background: rgba(112, 214, 165, 0.25);
+  color: #f4f6f5;
+}
