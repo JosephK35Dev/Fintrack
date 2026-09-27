@@ -38,6 +38,33 @@ import {
   sum,
   uid,
 } from './lib'
+import {
+  createCartera,
+  updateCartera,
+  deleteCartera,
+} from './services/carteras'
+import {
+  createCategoria,
+  updateCategoria,
+  deleteCategoria,
+} from './services/categorias'
+import {
+  createMovimiento,
+  updateMovimiento,
+  deleteMovimiento,
+} from './services/movimientos'
+import {
+  getTransferencias,
+  createTransferencia,
+  deleteTransferencia,
+} from './services/transferencias'
+
+import {
+  getMetas,
+  createMeta,
+  updateMeta,
+  deleteMeta,
+} from './services/metas'
 
 const COLORS = [
   '#70d6a5',
@@ -495,10 +522,30 @@ function MovRow({
                   '¿Estás seguro de que quieres eliminar este movimiento? Esta acción no se puede deshacer.',
                 variant: 'danger',
                 confirmText: 'Eliminar',
-                onConfirm: () =>
-                  s.setMovs(
-                    s.movs.filter(x => x.id !== m.id)
-                  ),
+                onConfirm: async () => {
+                  try {
+                    await deleteMovimiento(m.id)
+
+                    s.setMovs(
+                      s.movs.filter(
+                        x => x.id !== m.id
+                      )
+                    )
+                  } catch (error) {
+                    console.error(
+                      'Error eliminando movimiento:',
+                      error
+                    )
+
+                    s.showAlert({
+                      title: 'Error',
+                      message:
+                        'No se pudo eliminar el movimiento de Supabase.',
+                      variant: 'danger',
+                      confirmText: 'Entendido',
+                    })
+                  }
+                },
               })
             }
           >
@@ -1087,18 +1134,45 @@ export function Carteras({ s }: { s: Store }) {
   const isNew =
     edit && !s.carts.some(c => c.id === edit.id)
 
-  const save = () => {
+  const save = async () => {
     if (!edit || !edit.nombre.trim()) return
 
-    s.setCarts(
-      isNew
-        ? [...s.carts, edit]
-        : s.carts.map(c =>
-          c.id === edit.id ? edit : c
-        )
-    )
+    try {
+      if (isNew) {
+        const nueva = await createCartera({
+          nombre: edit.nombre.trim(),
+          saldoInicial: edit.saldoInicial,
+          incluirEnTotal: edit.incluirEnTotal,
+        })
 
-    setEdit(null)
+        s.setCarts([
+          ...s.carts,
+          nueva,
+        ])
+      } else {
+        const actualizada = await updateCartera(edit)
+
+        s.setCarts(
+          s.carts.map(c =>
+            c.id === actualizada.id
+              ? actualizada
+              : c
+          )
+        )
+      }
+
+      setEdit(null)
+    } catch (error) {
+      console.error('Error guardando cartera:', error)
+
+      s.showAlert({
+        title: 'Error',
+        message:
+          'No se pudo guardar la cartera en Supabase.',
+        variant: 'danger',
+        confirmText: 'Entendido',
+      })
+    }
   }
 
   const remove = (c: Cartera) => {
@@ -1109,31 +1183,65 @@ export function Carteras({ s }: { s: Store }) {
         'Sus movimientos quedarán sin cartera y las transferencias relacionadas serán eliminadas.',
       variant: 'danger',
       confirmText: 'Eliminar',
-      onConfirm: () => {
-        s.setMovs(
-          s.movs.map(m =>
-            m.cartera === c.id
-              ? { ...m, cartera: undefined }
-              : m
-          )
-        )
+      onConfirm: async () => {
+        try {
+          await deleteCartera(c.id)
 
-        s.setTransfers(
-          s.transfers.filter(
-            t =>
-              t.desde !== c.id &&
-              t.hacia !== c.id
+          s.setMovs(
+            s.movs.map(m =>
+              m.cartera === c.id
+                ? { ...m, cartera: undefined }
+                : m
+            )
           )
-        )
 
-        s.setCarts(
-          s.carts.filter(x => x.id !== c.id)
-        )
+          try {
+            await deleteTransferencia(c.id)
+
+            s.setTransfers(
+              s.transfers.filter(
+                t => t.id !== c.id
+              )
+            )
+          } catch (error) {
+            console.error(
+              'Error eliminando transferencia:',
+              error
+            )
+
+            s.showAlert({
+              title: 'Error',
+              message:
+                'No se pudo eliminar la transferencia de Supabase.',
+              variant: 'danger',
+              confirmText: 'Entendido',
+            })
+          }
+
+          s.setCarts(
+            s.carts.filter(
+              x => x.id !== c.id
+            )
+          )
+        } catch (error) {
+          console.error(
+            'Error eliminando cartera:',
+            error
+          )
+
+          s.showAlert({
+            title: 'Error',
+            message:
+              'No se pudo eliminar la cartera de Supabase.',
+            variant: 'danger',
+            confirmText: 'Entendido',
+          })
+        }
       },
     })
   }
 
-  const saveTransfer = (t: Transferencia) => {
+  const saveTransfer = async (t: Transferencia) => {
     const saldoOrigen = s.saldo(t.desde)
 
     if (t.monto > saldoOrigen) {
@@ -1153,9 +1261,30 @@ export function Carteras({ s }: { s: Store }) {
 
       return
     }
+    try {
+      const nueva =
+        await createTransferencia(t)
 
-    s.setTransfers([t, ...s.transfers])
-    setTransferOpen(false)
+      s.setTransfers([
+        nueva,
+        ...s.transfers,
+      ])
+
+      setTransferOpen(false)
+    } catch (error) {
+      console.error(
+        'Error creando transferencia:',
+        error
+      )
+
+      s.showAlert({
+        title: 'Error',
+        message:
+          'No se pudo guardar la transferencia en Supabase.',
+        variant: 'danger',
+        confirmText: 'Entendido',
+      })
+    }
   }
 
   return (
@@ -1192,7 +1321,7 @@ export function Carteras({ s }: { s: Store }) {
               className={btn}
               onClick={() =>
                 setEdit({
-                  id: uid(),
+                  id: '',
                   nombre: '',
                   saldoInicial: 0,
                   incluirEnTotal: true,
@@ -1271,10 +1400,9 @@ export function Carteras({ s }: { s: Store }) {
                     rounded-lg
                     px-2.5 py-1
                     text-[11px] font-medium
-                    ${
-                      c.incluirEnTotal
-                        ? 'bg-brand/[0.08] text-brand'
-                        : 'bg-white/[0.04] text-mute'
+                    ${c.incluirEnTotal
+                      ? 'bg-brand/[0.08] text-brand'
+                      : 'bg-white/[0.04] text-mute'
                     }
                   `}
                 >
@@ -1297,19 +1425,38 @@ export function Carteras({ s }: { s: Store }) {
                     type="checkbox"
                     className="h-4 w-4 cursor-pointer accent-[#70d6a5]"
                     checked={c.incluirEnTotal}
-                    onChange={e =>
-                      s.setCarts(
-                        s.carts.map(x =>
-                          x.id === c.id
-                            ? {
-                              ...x,
-                              incluirEnTotal:
-                                e.target.checked,
-                            }
-                            : x
+                    onChange={async e => {
+                      const actualizada = {
+                        ...c,
+                        incluirEnTotal: e.target.checked,
+                      }
+
+                      try {
+                        const resultado =
+                          await updateCartera(actualizada)
+
+                        s.setCarts(
+                          s.carts.map(x =>
+                            x.id === resultado.id
+                              ? resultado
+                              : x
+                          )
                         )
-                      )
-                    }
+                      } catch (error) {
+                        console.error(
+                          'Error actualizando balance:',
+                          error
+                        )
+
+                        s.showAlert({
+                          title: 'Error',
+                          message:
+                            'No se pudo actualizar la cartera.',
+                          variant: 'danger',
+                          confirmText: 'Entendido',
+                        })
+                      }
+                    }}
                   />
                 </label>
               </div>
@@ -1432,12 +1579,30 @@ export function Carteras({ s }: { s: Store }) {
                               '¿Estás seguro de que quieres eliminar esta transferencia? El saldo de las carteras se actualizará.',
                             variant: 'danger',
                             confirmText: 'Eliminar',
-                            onConfirm: () =>
-                              s.setTransfers(
-                                s.transfers.filter(
-                                  x => x.id !== t.id
+                            onConfirm: async () => {
+                              try {
+                                await deleteTransferencia(t.id)
+
+                                s.setTransfers(
+                                  s.transfers.filter(
+                                    x => x.id !== t.id
+                                  )
                                 )
-                              ),
+                              } catch (error) {
+                                console.error(
+                                  'Error eliminando transferencia:',
+                                  error
+                                )
+
+                                s.showAlert({
+                                  title: 'Error',
+                                  message:
+                                    'No se pudo eliminar la transferencia de Supabase.',
+                                  variant: 'danger',
+                                  confirmText: 'Entendido',
+                                })
+                              }
+                            },
                           })
                         }}
                       >
@@ -1545,7 +1710,7 @@ export function Metas({ s }: { s: Store }) {
     edit &&
     !s.metas.some(m => m.id === edit.id)
 
-  const save = () => {
+  const save = async () => {
     if (
       !edit ||
       !edit.nombre.trim() ||
@@ -1555,17 +1720,46 @@ export function Metas({ s }: { s: Store }) {
       return
     }
 
-    s.setMetas(
-      isNew
-        ? [...s.metas, edit]
-        : s.metas.map(m =>
-          m.id === edit.id
-            ? edit
-            : m
-        )
-    )
+    try {
+      if (isNew) {
+        const nueva = await createMeta({
+          nombre: edit.nombre.trim(),
+          objetivo: edit.objetivo,
+          aporteManual: edit.aporteManual,
+          carteras: edit.carteras,
+        })
 
-    setEdit(null)
+        s.setMetas([
+          ...s.metas,
+          nueva,
+        ])
+      } else {
+        const actualizada = await updateMeta(edit)
+
+        s.setMetas(
+          s.metas.map(m =>
+            m.id === actualizada.id
+              ? actualizada
+              : m
+          )
+        )
+      }
+
+      setEdit(null)
+    } catch (error) {
+      console.error(
+        'Error guardando meta:',
+        error
+      )
+
+      s.showAlert({
+        title: 'Error',
+        message:
+          'No se pudo guardar la meta en Supabase.',
+        variant: 'danger',
+        confirmText: 'Entendido',
+      })
+    }
   }
 
   const remove = (meta: Meta) => {
@@ -1575,24 +1769,71 @@ export function Metas({ s }: { s: Store }) {
         `¿Estás seguro de que quieres eliminar la meta "${meta.nombre}"? Esta acción no se puede deshacer.`,
       variant: 'danger',
       confirmText: 'Eliminar',
-      onConfirm: () =>
-        s.setMetas(
-          s.metas.filter(
-            m => m.id !== meta.id
+      onConfirm: async () => {
+        try {
+          await deleteMeta(meta.id)
+
+          s.setMetas(
+            s.metas.filter(
+              m => m.id !== meta.id
+            )
           )
-        ),
+        } catch (error) {
+          console.error(
+            'Error eliminando meta:',
+            error
+          )
+
+          s.showAlert({
+            title: 'Error',
+            message:
+              'No se pudo eliminar la meta de Supabase.',
+            variant: 'danger',
+            confirmText: 'Entendido',
+          })
+        }
+      },
     })
   }
 
   const getSaved = (meta: Meta) => {
-    const cartera = meta.cartera
-      ? s.saldo(meta.cartera)
-      : 0
+    const saldoCarteras = meta.carteras.reduce(
+      (total, carteraId) =>
+        total + s.saldo(carteraId),
+      0
+    )
 
     return Math.max(
       0,
-      meta.aporteManual + cartera
+      meta.aporteManual + saldoCarteras
     )
+  }
+
+  const getCarterasNombres = (meta: Meta) => {
+    return meta.carteras
+      .map(id =>
+        s.carts.find(c => c.id === id)?.nombre
+      )
+      .filter(Boolean)
+  }
+
+  const toggleCartera = (carteraId: string) => {
+    if (!edit) return
+
+    const seleccionada =
+      edit.carteras.includes(carteraId)
+
+    setEdit({
+      ...edit,
+      carteras: seleccionada
+        ? edit.carteras.filter(
+          id => id !== carteraId
+        )
+        : [
+          ...edit.carteras,
+          carteraId,
+        ],
+    })
   }
 
   return (
@@ -1607,7 +1848,7 @@ export function Metas({ s }: { s: Store }) {
                 nombre: '',
                 objetivo: 0,
                 aporteManual: 0,
-                cartera: undefined,
+                carteras: [],
               })
             }
           >
@@ -1681,13 +1922,8 @@ export function Metas({ s }: { s: Store }) {
                 )
                 : 0
 
-            const cartera =
-              meta.cartera
-                ? s.carts.find(
-                  c =>
-                    c.id === meta.cartera
-                )
-                : undefined
+            const nombresCarteras =
+              getCarterasNombres(meta)
 
             const reached =
               saved >= meta.objetivo
@@ -1698,10 +1934,9 @@ export function Metas({ s }: { s: Store }) {
                 className={`
                   group
                   bg-gradient-to-br
-                  ${
-                    reached
-                      ? 'from-brand/[0.055]'
-                      : 'from-white/[0.035]'
+                  ${reached
+                    ? 'from-brand/[0.055]'
+                    : 'from-white/[0.035]'
                   }
                   via-white/[0.02]
                   to-transparent
@@ -1718,10 +1953,9 @@ export function Metas({ s }: { s: Store }) {
                     rounded-full
                     blur-3xl
                     transition-all duration-300
-                    ${
-                      reached
-                        ? 'bg-brand/[0.10] group-hover:bg-brand/[0.14]'
-                        : 'bg-brand/[0.045] group-hover:bg-brand/[0.075]'
+                    ${reached
+                      ? 'bg-brand/[0.10] group-hover:bg-brand/[0.14]'
+                      : 'bg-brand/[0.045] group-hover:bg-brand/[0.075]'
                     }
                   `}
                 />
@@ -1752,8 +1986,11 @@ export function Metas({ s }: { s: Store }) {
                           </h3>
 
                           <p className="mt-0.5 text-[11px] text-mute">
-                            {cartera
-                              ? `Vinculada a ${cartera.nombre}`
+                            {nombresCarteras.length
+                              ? `${nombresCarteras.length} ${nombresCarteras.length === 1
+                                ? 'cartera vinculada'
+                                : 'carteras vinculadas'
+                              }`
                               : 'Ahorro independiente'}
                           </p>
                         </div>
@@ -1803,10 +2040,9 @@ export function Metas({ s }: { s: Store }) {
                           rounded-lg
                           px-2.5 py-1
                           text-sm font-semibold
-                          ${
-                            reached
-                              ? 'bg-brand/[0.09] text-brand'
-                              : 'bg-white/[0.04] text-mute'
+                          ${reached
+                            ? 'bg-brand/[0.09] text-brand'
+                            : 'bg-white/[0.04] text-mute'
                           }
                         `}
                       >
@@ -1855,9 +2091,7 @@ export function Metas({ s }: { s: Store }) {
                       </p>
 
                       <p className="mt-1 text-sm font-semibold">
-                        {money(
-                          meta.aporteManual
-                        )}
+                        {money(meta.aporteManual)}
                       </p>
                     </div>
 
@@ -1871,28 +2105,47 @@ export function Metas({ s }: { s: Store }) {
                         group-hover:border-white/[0.06]
                       "
                     >
-                      <p className="truncate text-[11px] text-mute">
-                        {cartera
-                          ? cartera.nombre
-                          : 'Sin cartera'}
+                      <p className="text-[11px] text-mute">
+                        Desde carteras
                       </p>
 
                       <p className="mt-1 text-sm font-semibold">
-                        {cartera
-                          ? money(
-                            s.saldo(
-                              cartera.id
-                            )
+                        {money(
+                          meta.carteras.reduce(
+                            (total, id) =>
+                              total + s.saldo(id),
+                            0
                           )
-                          : '$0'}
+                        )}
                       </p>
                     </div>
                   </div>
 
-                  {cartera && (
+                  {nombresCarteras.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {nombresCarteras.map(nombre => (
+                        <span
+                          key={nombre}
+                          className="
+                            rounded-lg
+                            border border-brand/[0.08]
+                            bg-brand/[0.045]
+                            px-2 py-1
+                            text-[11px]
+                            text-brand/80
+                          "
+                        >
+                          {nombre}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {nombresCarteras.length > 0 && (
                     <p className="mt-3 text-xs leading-relaxed text-mute">
                       La meta incluye automáticamente
-                      el saldo actual de esta cartera.
+                      el saldo actual de las carteras
+                      seleccionadas.
                     </p>
                   )}
 
@@ -1941,8 +2194,7 @@ export function Metas({ s }: { s: Store }) {
                 onChange={e =>
                   setEdit({
                     ...edit,
-                    nombre:
-                      e.target.value,
+                    nombre: e.target.value,
                   })
                 }
               />
@@ -1960,9 +2212,7 @@ export function Metas({ s }: { s: Store }) {
                   setEdit({
                     ...edit,
                     objetivo:
-                      Number(
-                        e.target.value
-                      ),
+                      Number(e.target.value),
                   })
                 }
               />
@@ -1980,9 +2230,7 @@ export function Metas({ s }: { s: Store }) {
                   setEdit({
                     ...edit,
                     aporteManual:
-                      Number(
-                        e.target.value
-                      ),
+                      Number(e.target.value),
                   })
                 }
               />
@@ -1994,42 +2242,98 @@ export function Metas({ s }: { s: Store }) {
               </p>
             </Field>
 
-            <Field label="Cartera vinculada (opcional)">
-              <select
-                className={inp}
-                value={
-                  edit.cartera ?? ''
-                }
-                onChange={e =>
-                  setEdit({
-                    ...edit,
-                    cartera:
-                      e.target.value ||
-                      undefined,
-                  })
-                }
+            <Field label="Carteras vinculadas">
+              <div
+                className="
+                  max-h-52
+                  space-y-1.5
+                  overflow-y-auto
+                  rounded-xl
+                  border border-white/[0.06]
+                  bg-white/[0.018]
+                  p-2
+                "
               >
-                <option value="">
-                  Sin cartera
-                </option>
+                {s.carts.length ? (
+                  s.carts.map(c => {
+                    const checked =
+                      edit.carteras.includes(c.id)
 
-                {s.carts.map(c => (
-                  <option
-                    key={c.id}
-                    value={c.id}
-                  >
-                    {c.nombre}
-                  </option>
-                ))}
-              </select>
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() =>
+                          toggleCartera(c.id)
+                        }
+                        className={`
+                          flex w-full
+                          items-center
+                          justify-between
+                          gap-3
+                          rounded-lg
+                          px-3 py-2.5
+                          text-left
+                          transition-all duration-200
+                          ${checked
+                            ? 'border border-brand/[0.10] bg-brand/[0.07] text-ink'
+                            : 'border border-transparent bg-transparent text-mute hover:bg-white/[0.035] hover:text-ink'
+                          }
+                        `}
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {c.nombre}
+                          </p>
+
+                          <p className="mt-0.5 text-[11px] text-mute">
+                            {money(s.saldo(c.id))}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`
+                            grid h-5 w-5
+                            shrink-0
+                            place-items-center
+                            rounded-md
+                            border
+                            transition-all duration-200
+                            ${checked
+                              ? 'border-brand bg-brand text-bg'
+                              : 'border-white/[0.10] bg-white/[0.025]'
+                            }
+                          `}
+                        >
+                          {checked && (
+                            <Check size={13} />
+                          )}
+                        </span>
+                      </button>
+                    )
+                  })
+                ) : (
+                  <p className="px-2 py-3 text-xs text-mute">
+                    No tienes carteras creadas.
+                  </p>
+                )}
+              </div>
+
+              <p className="mt-1.5 text-[11px] text-mute">
+                Puedes seleccionar una o varias
+                carteras. Sus saldos se sumarán
+                automáticamente a la meta.
+              </p>
             </Field>
 
-            <div className="
-              rounded-xl
-              border border-brand/[0.08]
-              bg-brand/[0.035]
-              p-3.5
-            ">
+            <div
+              className="
+                rounded-xl
+                border border-brand/[0.08]
+                bg-brand/[0.035]
+                p-3.5
+              "
+            >
               <p className="text-xs text-mute">
                 La meta tendrá actualmente
               </p>
@@ -2037,12 +2341,22 @@ export function Metas({ s }: { s: Store }) {
               <p className="mt-1 text-lg font-semibold text-brand">
                 {money(
                   edit.aporteManual +
-                  (edit.cartera
-                    ? s.saldo(
-                      edit.cartera
-                    )
-                    : 0)
+                  edit.carteras.reduce(
+                    (total, carteraId) =>
+                      total +
+                      s.saldo(carteraId),
+                    0
+                  )
                 )}
+              </p>
+
+              <p className="mt-1 text-[11px] text-mute">
+                {edit.carteras.length
+                  ? `${edit.carteras.length} ${edit.carteras.length === 1
+                    ? 'cartera seleccionada'
+                    : 'carteras seleccionadas'
+                  }`
+                  : 'Sin carteras vinculadas'}
               </p>
             </div>
 
@@ -2178,12 +2492,11 @@ export function Analisis({ s }: { s: Store }) {
             className={`
               !p-4
               bg-gradient-to-br
-              ${
-                index === 0
-                  ? 'from-brand/[0.045] via-white/[0.02] to-transparent'
-                  : index === 1
-                    ? 'from-neg/[0.04] via-white/[0.02] to-transparent'
-                    : 'from-white/[0.035] via-white/[0.02] to-transparent'
+              ${index === 0
+                ? 'from-brand/[0.045] via-white/[0.02] to-transparent'
+                : index === 1
+                  ? 'from-neg/[0.04] via-white/[0.02] to-transparent'
+                  : 'from-white/[0.035] via-white/[0.02] to-transparent'
               }
               hover:-translate-y-0.5
               hover:shadow-[0_12px_32px_rgba(0,0,0,0.14)]
@@ -2198,12 +2511,11 @@ export function Analisis({ s }: { s: Store }) {
                 className={`
                   h-1.5 w-1.5
                   rounded-full
-                  ${
-                    l === 'Ingresos'
-                      ? 'bg-brand shadow-[0_0_8px_rgba(112,214,165,0.35)]'
-                      : l === 'Gastos'
-                        ? 'bg-neg shadow-[0_0_8px_rgba(255,123,123,0.30)]'
-                        : 'bg-white/[0.30]'
+                  ${l === 'Ingresos'
+                    ? 'bg-brand shadow-[0_0_8px_rgba(112,214,165,0.35)]'
+                    : l === 'Gastos'
+                      ? 'bg-neg shadow-[0_0_8px_rgba(255,123,123,0.30)]'
+                      : 'bg-white/[0.30]'
                   }
                 `}
               />
@@ -2359,14 +2671,46 @@ export function Config({ s }: { s: Store }) {
   const [editing, setEditing] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
 
-  const add = () => {
+  const add = async () => {
     const v = n.trim()
 
-    if (v && !s.cats.includes(v)) {
-      s.setCats([...s.cats, v])
+    if (!v) return
+
+    if (s.cats.includes(v)) {
+      s.showAlert({
+        title: 'Categoría existente',
+        message:
+          'Ya existe una categoría con ese nombre.',
+        variant: 'warning',
+        confirmText: 'Entendido',
+      })
+
+      return
     }
 
-    setN('')
+    try {
+      const nueva = await createCategoria(v)
+
+      s.setCats([
+        ...s.cats,
+        nueva,
+      ])
+
+      setN('')
+    } catch (error) {
+      console.error(
+        'Error creando categoría:',
+        error
+      )
+
+      s.showAlert({
+        title: 'Error',
+        message:
+          'No se pudo crear la categoría en Supabase.',
+        variant: 'danger',
+        confirmText: 'Entendido',
+      })
+    }
   }
 
   const startEdit = (c: string) => {
@@ -2379,7 +2723,7 @@ export function Config({ s }: { s: Store }) {
     setEditName('')
   }
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editing) return
 
     const v = editName.trim()
@@ -2401,48 +2745,58 @@ export function Config({ s }: { s: Store }) {
       return
     }
 
-    // Cambiar el nombre de la categoría
-    s.setCats(
-      s.cats.map(x =>
-        x === editing ? v : x
-      )
-    )
+    try {
+      const actualizada =
+        await updateCategoria(
+          editing,
+          v
+        )
 
-    // Actualizar la categoría en todos los movimientos
-    s.setMovs(
-      s.movs.map(m =>
-        m.cat === editing
-          ? { ...m, cat: v }
-          : m
+      // Actualizar categoría
+      s.setCats(
+        s.cats.map(x =>
+          x === editing
+            ? actualizada
+            : x
+        )
       )
-    )
 
-    cancelEdit()
+      // Actualizar movimientos que usan esa categoría
+      s.setMovs(
+        s.movs.map(m =>
+          m.cat === editing
+            ? {
+              ...m,
+              cat: actualizada,
+            }
+            : m
+        )
+      )
+
+      cancelEdit()
+    } catch (error) {
+      console.error(
+        'Error actualizando categoría:',
+        error
+      )
+
+      s.showAlert({
+        title: 'Error',
+        message:
+          'No se pudo actualizar la categoría en Supabase.',
+        variant: 'danger',
+        confirmText: 'Entendido',
+      })
+    }
   }
 
   const reset = () => {
     s.showAlert({
-      title: 'Restablecer datos',
+      title: 'Función no disponible',
       message:
-        'Se eliminarán todos tus movimientos, carteras, metas, categorías y transferencias. Esta acción no se puede deshacer.',
-      variant: 'danger',
-      confirmText: 'Restablecer',
-      onConfirm: () => {
-        ;[
-          'movs',
-          'carts',
-          'cats',
-          'metas',
-          'transfers',
-        ].forEach(
-          k =>
-            localStorage.removeItem(
-              'fin:' + k
-            )
-        )
-
-        location.reload()
-      },
+        'El restablecimiento de datos todavía debe adaptarse a Supabase. Tus datos actuales no serán modificados.',
+      variant: 'warning',
+      confirmText: 'Entendido',
     })
   }
 
@@ -2546,12 +2900,30 @@ export function Config({ s }: { s: Store }) {
                             `¿Eliminar la categoría "${c}"? Los movimientos existentes conservarán sus registros, pero ya no aparecerá como categoría disponible.`,
                           variant: 'danger',
                           confirmText: 'Eliminar',
-                          onConfirm: () =>
-                            s.setCats(
-                              s.cats.filter(
-                                x => x !== c
+                          onConfirm: async () => {
+                            try {
+                              await deleteCategoria(c)
+
+                              s.setCats(
+                                s.cats.filter(
+                                  x => x !== c
+                                )
                               )
-                            ),
+                            } catch (error) {
+                              console.error(
+                                'Error eliminando categoría:',
+                                error
+                              )
+
+                              s.showAlert({
+                                title: 'Error',
+                                message:
+                                  'No se pudo eliminar la categoría de Supabase.',
+                                variant: 'danger',
+                                confirmText: 'Entendido',
+                              })
+                            }
+                          },
                         })
                       }
                     >
@@ -2571,10 +2943,10 @@ export function Config({ s }: { s: Store }) {
         </h3>
 
         <p className="text-sm leading-relaxed text-mute">
-          Finanzas guarda todo en este navegador
-          (localStorage). Moneda: COP. Los saldos
-          de las carteras se calculan a partir de
-          su saldo inicial y sus movimientos.
+          Finanzas guarda tus datos en Supabase.
+          Moneda: COP. Los saldos de las carteras se
+          calculan a partir de su saldo inicial y sus
+          movimientos.
         </p>
 
         <button

@@ -24,7 +24,7 @@ export interface Meta {
   nombre: string
   objetivo: number
   aporteManual: number
-  cartera?: string
+  carteras: string[]
 }
 
 export interface Transferencia {
