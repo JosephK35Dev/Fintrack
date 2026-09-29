@@ -563,6 +563,15 @@ const sorted = (ms: Mov[]) =>
 export function Dashboard({ s }: { s: Store }) {
   const [hide, setHide] = useState(false)
 
+
+  const hora = new Date().getHours()
+
+  const saludo =
+    hora < 12
+      ? 'Buenos días'
+      : hora < 19
+        ? 'Buenas tardes'
+        : 'Buenas noches'
   const total = s.carts
     .filter(c => c.incluirEnTotal)
     .reduce((a, c) => a + s.saldo(c.id), 0)
@@ -576,7 +585,7 @@ export function Dashboard({ s }: { s: Store }) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            Buenas noches, Joseph
+            {saludo}, Joseph
           </h1>
 
           <p className="mt-1 text-sm text-mute">
