@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react'
+import { ReactNode, useRef, useState } from 'react'
 import {
   Bar,
   BarChart,
@@ -27,6 +27,18 @@ import {
   Trash2,
   X,
   CheckSquare,
+  ArrowDownLeft,
+  ArrowUpRight,
+  ChevronRight,
+  Flame,
+  Bike,
+  Fuel,
+  Gauge,
+  Wrench,
+  CalendarDays,
+  CircleDollarSign,
+  Droplets,
+  Tag,
 } from 'lucide-react'
 import {
   AlertOptions,
@@ -35,6 +47,10 @@ import {
   Mov,
   Store,
   Tarea,
+  Habito,
+  MotoInfo,
+  MantenimientoMoto,
+  GastoMoto,
   Tipo,
   Transferencia,
   daysAgo,
@@ -75,6 +91,24 @@ import {
   updateTarea,
   deleteTarea,
 } from './services/tareas'
+import {
+  createHabito,
+  updateHabito,
+  deleteHabito,
+  marcarHabito,
+  desmarcarHabito,
+} from './services/habitos'
+import { saveMoto, uploadMotoImage, updateMotoImage } from './services/moto'
+import {
+  createMantenimientoMoto,
+  updateMantenimientoMoto,
+  deleteMantenimientoMoto,
+} from './services/mantenimientosMoto'
+import {
+  createGastoMoto,
+  updateGastoMoto,
+  deleteGastoMoto,
+} from './services/gastosMoto'
 
 const COLORS = [
   '#70d6a5',
@@ -570,269 +604,228 @@ function MovRow({
 const sorted = (ms: Mov[]) =>
   [...ms].sort((a, b) => b.fecha.localeCompare(a.fecha))
 
-export function Dashboard({ s }: { s: Store }) {
+export function Dashboard({
+  s,
+  onNavigate,
+}: {
+  s: Store
+  onNavigate?: (page: 'habitos' | 'tareas' | 'moto') => void
+}) {
   const [hide, setHide] = useState(false)
-
   const now = new Date()
-  const hora = now.getHours()
-
-  const saludo =
-    hora < 12
-      ? 'Buenos días'
-      : hora < 19
-        ? 'Buenas tardes'
-        : 'Buenas noches'
-
   const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1)
   const inicioMesSiguiente = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-
   const movimientosMes = s.movs.filter(m => {
     const fecha = new Date(m.fecha)
     return fecha >= inicioMes && fecha < inicioMesSiguiente
   })
-
   const ingresosMes = sum(movimientosMes, 'ingreso')
   const gastosMes = sum(movimientosMes, 'gasto')
   const balanceMes = ingresosMes - gastosMes
-
   const total = s.carts
     .filter(c => c.incluirEnTotal)
     .reduce((a, c) => a + s.saldo(c.id), 0)
-
-  const pendientes = s.tareas.filter(t => !t.completada)
-  const completadas = s.tareas.filter(t => t.completada)
-
+  const prioridad = { alta: 0, media: 1, baja: 2 }
+  const pendientes = [...s.tareas.filter(t => !t.completada)].sort((a, b) => {
+    const porPrioridad = prioridad[a.prioridad] - prioridad[b.prioridad]
+    if (porPrioridad) return porPrioridad
+    if (a.fecha && b.fecha) return a.fecha.localeCompare(b.fecha)
+    if (a.fecha) return -1
+    if (b.fecha) return 1
+    return b.created_at.localeCompare(a.created_at)
+  })
   const mask = (n: number) => (hide ? '$ ••••••' : money(n))
-
   const fechaActual = new Intl.DateTimeFormat('es-CO', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
+    weekday: 'long', day: 'numeric', month: 'long',
   }).format(now)
+  const saludo = now.getHours() < 12
+    ? 'Buenos días'
+    : now.getHours() < 19 ? 'Buenas tardes' : 'Buenas noches'
+  const fechaHoy = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-')
+  const diaHoy = ((now.getDay() + 6) % 7) + 1
+  const habitosActivos = s.habitos.filter(h => h.activo)
+  const habitosDeHoy = habitosActivos.filter(h => (h.diasSemana ?? [1, 2, 3, 4, 5, 6, 7]).includes(diaHoy))
+  const completadosHoy = new Set(
+    s.registrosHabitos.filter(r => r.fecha === fechaHoy).map(r => r.habito_id)
+  )
+  const completadosProgramados = habitosDeHoy.filter(h => completadosHoy.has(h.id)).length
+  const progresoHabitos = habitosDeHoy.length
+    ? Math.round(completadosProgramados / habitosDeHoy.length * 100)
+    : 0
+  const rachaDe = (habitoId: string) => {
+    const habito = habitosActivos.find(h => h.id === habitoId)
+    if (!habito) return 0
+    const dias = habito.diasSemana ?? [1, 2, 3, 4, 5, 6, 7]
+    const registros = new Set(s.registrosHabitos.filter(r => r.habito_id === habitoId).map(r => r.fecha))
+    const cursor = new Date(now)
+    if (dias.includes(diaHoy) && !registros.has(fechaHoy)) cursor.setDate(cursor.getDate() - 1)
+    let racha = 0
+    while (true) {
+      const dia = ((cursor.getDay() + 6) % 7) + 1
+      if (dias.includes(dia)) {
+        const fecha = [cursor.getFullYear(), String(cursor.getMonth() + 1).padStart(2, '0'), String(cursor.getDate()).padStart(2, '0')].join('-')
+        if (!registros.has(fecha)) break
+        racha += 1
+      }
+      cursor.setDate(cursor.getDate() - 1)
+    }
+    return racha
+  }
+  const rachaActual = habitosActivos.reduce((max, habito) => Math.max(max, rachaDe(habito.id)), 0)
+  const formatFecha = (fecha?: string) => {
+    if (!fecha) return 'Sin registrar'
+    const [year, month, day] = fecha.slice(0, 10).split('-').map(Number)
+    return new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })
+      .format(new Date(year, month - 1, day))
+  }
 
   return (
     <div className="space-y-6 md:space-y-8">
-      {/* Encabezado */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.18em] text-brand/75">
-            {fechaActual}
-          </p>
-
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">
-            {saludo}, Joseph
-          </h1>
-
-          <p className="mt-1 text-sm text-mute">
-            Tu espacio financiero, de un vistazo.
-          </p>
+          <p className="text-xs font-medium uppercase tracking-[0.16em] text-brand/75">{fechaActual}</p>
+          <h1 className="mt-1.5 text-2xl font-semibold tracking-tight md:text-[28px]">{saludo}, Joseph</h1>
+          <p className="mt-1 text-sm text-mute">Tu panorama financiero y personal, de un vistazo.</p>
         </div>
-
-        <button
-          className={`${btn} w-full justify-center sm:w-auto`}
-          onClick={() => s.openMov()}
-        >
-          <Plus size={16} />
-          Nuevo movimiento
+        <button className={`${btn} w-full justify-center sm:w-auto`} onClick={() => s.openMov()}>
+          <Plus size={16} /> Nuevo movimiento
         </button>
       </header>
 
-      {/* Balance principal */}
-      
-      <Card className="relative isolate overflow-hidden !p-5 sm:!p-7" >
-        
-        <div className="pointer-events-none absolute -right-20 -top-24 -z-10 h-64 w-64 rounded-full bg-brand/[0.12] blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-32 left-1/3 -z-10 h-56 w-56 rounded-full bg-emerald-300/[0.05] blur-3xl" />
-        
-
-
+      <Card className="relative isolate !overflow-hidden !border-brand/[0.16] !bg-[#101915] !p-5 shadow-[0_24px_80px_rgba(36,120,78,0.18)] sm:!p-7">
+        <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(118deg,#101714_0%,#16231c_50%,#101916_100%)]" />
+        <div className="pointer-events-none absolute -right-16 -top-28 -z-10 h-80 w-80 rounded-full bg-[#70d6a5]/[0.22] blur-[90px]" />
+        <div className="pointer-events-none absolute -bottom-36 left-[28%] -z-10 h-72 w-72 rounded-full bg-emerald-400/[0.12] blur-[100px]" />
+        <div className="pointer-events-none absolute inset-0 -z-10 opacity-[0.08] [background-image:linear-gradient(135deg,transparent_0%,rgba(255,255,255,0.18)_50%,transparent_100%)]" />
         <div className="relative">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm text-mute">Balance total</p>
-              <p className="mt-1 text-xs text-mute/70">
-                Carteras incluidas en tu balance
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-[0.17em] text-brand/90">Balance total</p>
+              <p className="mt-1 text-xs text-white/55">Carteras incluidas en tu balance</p>
             </div>
-
             <IconBtn onClick={() => setHide(value => !value)}>
-              {hide ? <EyeOff size={16} /> : <Eye size={16} />}
+              {hide ? <EyeOff size={17} /> : <Eye size={17} />}
             </IconBtn>
           </div>
-
-          <p className="mt-5 break-words text-4xl font-semibold tracking-tight text-brand sm:text-5xl">
-            {mask(total)}
-          </p>
-
-          <div className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-white/[0.06] bg-black/[0.12] p-4">
-              <p className="text-xs text-mute">Ingresos este mes</p>
-              <p className="mt-2 text-lg font-semibold tracking-tight text-brand">
-                {mask(ingresosMes)}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/[0.06] bg-black/[0.12] p-4">
-              <p className="text-xs text-mute">Gastos este mes</p>
-              <p className="mt-2 text-lg font-semibold tracking-tight text-neg">
-                {mask(gastosMes)}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/[0.06] bg-black/[0.12] p-4">
-              <p className="text-xs text-mute">Balance del mes</p>
-              <p
-                className={`mt-2 text-lg font-semibold tracking-tight ${balanceMes >= 0 ? 'text-brand' : 'text-neg'
-                  }`}
-              >
-                {mask(balanceMes)}
-              </p>
-            </div>
+          <p className="mt-5 break-words text-[clamp(2.25rem,7vw,3.75rem)] font-semibold leading-none tracking-[-0.045em] text-white">{mask(total)}</p>
+          <div className="mt-5 inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-full border border-white/[0.09] bg-black/[0.16] px-3 py-1.5 text-xs">
+            <span className="text-white/55">Balance del mes</span>
+            <span className={`font-semibold ${balanceMes >= 0 ? 'text-brand' : 'text-neg'}`}>{mask(balanceMes)}</span>
           </div>
         </div>
       </Card>
 
-      {/* Carteras */}
+      <section className="grid gap-3 sm:grid-cols-2">
+        <Card className="!p-4 sm:!p-5">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand/[0.09] text-brand"><ArrowDownLeft size={19} /></span>
+            <div className="min-w-0"><p className="text-xs text-mute">Ingresos este mes</p><p className="mt-1 break-words text-xl font-semibold tracking-tight text-brand">{mask(ingresosMes)}</p></div>
+          </div>
+        </Card>
+        <Card className="!p-4 sm:!p-5">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-neg/[0.09] text-neg"><ArrowUpRight size={19} /></span>
+            <div className="min-w-0"><p className="text-xs text-mute">Gastos este mes</p><p className="mt-1 break-words text-xl font-semibold tracking-tight text-neg">{mask(gastosMes)}</p></div>
+          </div>
+        </Card>
+      </section>
+
       <section>
         <div className="mb-3 flex items-end justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight">Carteras</h2>
-            <p className="mt-1 text-xs text-mute">
-              {s.carts.length} {s.carts.length === 1 ? 'cartera' : 'carteras'}
-            </p>
-          </div>
+          <div><h2 className="text-lg font-semibold tracking-tight">Carteras</h2><p className="mt-1 text-xs text-mute">Saldos y participación en tu balance</p></div>
+          <span className="text-xs text-mute">{s.carts.length} {s.carts.length === 1 ? 'cartera' : 'carteras'}</span>
         </div>
-
         {s.carts.length ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {s.carts.map(c => (
-              <Card
-                key={c.id}
-                className="!p-4 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/[0.035]"
-              >
+              <Card key={c.id} className="!p-4 transition-transform duration-200 hover:-translate-y-0.5">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{c.nombre}</p>
-                    <p className="mt-1 text-xs text-mute">
-                      {c.incluirEnTotal
-                        ? 'Incluida en el balance'
-                        : 'Fuera del balance total'}
-                    </p>
-                  </div>
-
-                  <span
-                    className={`mt-1 h-2 w-2 shrink-0 rounded-full ${c.incluirEnTotal ? 'bg-brand' : 'bg-white/20'
-                      }`}
-                  />
+                  <div className="min-w-0"><p className="truncate text-sm font-medium">{c.nombre}</p><p className="mt-1 text-[11px] text-mute">{c.incluirEnTotal ? 'Incluida en el balance' : 'Fuera del balance total'}</p></div>
+                  <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${c.incluirEnTotal ? 'bg-brand' : 'bg-white/20'}`} />
                 </div>
-
-                <p className="mt-5 break-words text-lg font-semibold tracking-tight">
-                  {mask(s.saldo(c.id))}
-                </p>
+                <p className="mt-4 break-words text-lg font-semibold tracking-tight">{mask(s.saldo(c.id))}</p>
               </Card>
             ))}
           </div>
-        ) : (
-          <Card>
-            <Empty t="Todavía no tienes carteras." />
-          </Card>
-        )}
+        ) : <Card><Empty t="Todavía no tienes carteras." /></Card>}
       </section>
 
-      {/* Tareas */}
-      <Card className="!p-5 sm:!p-6">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight">Tareas</h2>
-            <p className="mt-1 text-xs text-mute">
-              Un vistazo rápido a tus pendientes
-            </p>
-          </div>
-
-          <CheckSquare size={19} className="text-brand" />
-        </div>
-
-        <div className="mb-4 grid grid-cols-2 gap-3">
-          <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
-            <p className="text-xs text-mute">Pendientes</p>
-            <p className="mt-1 text-xl font-semibold">{pendientes.length}</p>
-          </div>
-
-          <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
-            <p className="text-xs text-mute">Completadas</p>
-            <p className="mt-1 text-xl font-semibold text-brand">
-              {completadas.length}
-            </p>
-          </div>
-        </div>
-
-        {pendientes.length ? (
-          <div className="space-y-2">
-            {pendientes.slice(0, 4).map(t => (
-              <div
-                key={t.id}
-                className="flex items-center gap-3 rounded-xl border border-white/[0.05] bg-white/[0.02] px-3 py-3"
-              >
-                <span className="h-2 w-2 shrink-0 rounded-full bg-brand/80" />
-                <p className="min-w-0 flex-1 truncate text-sm">{t.titulo}</p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="rounded-xl border border-white/[0.05] bg-white/[0.02] px-3 py-4 text-sm text-mute">
-            No tienes tareas pendientes.
-          </p>
-        )}
-      </Card>
-
-      {/* Actividad reciente y categorías */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card className="!p-5 sm:!p-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold tracking-tight">
-                Actividad reciente
-              </h2>
-              <p className="mt-1 text-xs text-mute">
-                Tus últimos movimientos registrados
-              </p>
-            </div>
+          <div className="flex items-start justify-between gap-3">
+            <div><p className="text-xs font-medium uppercase tracking-[0.13em] text-brand/75">Rutina</p><h2 className="mt-1 text-lg font-semibold">Hábitos de hoy</h2></div>
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#ffd27b]/[0.09] text-[#ffd27b]"><Flame size={19} /></span>
           </div>
-
-          {s.movs.length ? (
-            <div className="space-y-1">
-              {sorted(s.movs)
-                .slice(0, 5)
-                .map(m => (
-                  <MovRow key={m.id} m={m} s={s} />
-                ))}
-            </div>
-          ) : (
-            <Empty t="Sin movimientos todavía. Registra el primero." />
-          )}
+          <div className="mt-5 flex items-end justify-between gap-3">
+            <p className="text-2xl font-semibold tracking-tight"><span className="text-brand">{completadosProgramados}</span><span className="text-mute"> / {habitosDeHoy.length}</span></p>
+            <span className="text-sm font-medium text-mute">{progresoHabitos}%</span>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.06]" role="progressbar" aria-label="Progreso de hábitos de hoy" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progresoHabitos}>
+            <div className="h-full rounded-full bg-brand transition-[width] duration-500" style={{ width: `${progresoHabitos}%` }} />
+          </div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+            {habitosDeHoy.length ? <span className="inline-flex items-center gap-1.5 text-mute"><Flame size={14} className="text-[#ffd27b]" /> Racha más alta: <strong className="font-semibold text-ink">{rachaActual} {rachaActual === 1 ? 'día' : 'días'}</strong></span> : <span className="text-mute">No hay hábitos programados para hoy.</span>}
+            <button type="button" onClick={() => onNavigate?.('habitos')} className="inline-flex items-center gap-1 font-medium text-brand transition hover:text-white">Ver hábitos <ChevronRight size={15} /></button>
+          </div>
         </Card>
 
         <Card className="!p-5 sm:!p-6">
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold tracking-tight">
-              Gastos por categoría
-            </h2>
-            <p className="mt-1 text-xs text-mute">
-              Distribución de tus gastos registrados
-            </p>
+          <div className="flex items-start justify-between gap-3">
+            <div><p className="text-xs font-medium uppercase tracking-[0.13em] text-brand/75">Organización</p><h2 className="mt-1 text-lg font-semibold">Tareas pendientes</h2></div>
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand/[0.08] text-brand"><CheckSquare size={19} /></span>
           </div>
-
-          {s.movs.some(m => m.tipo === 'gasto') ? (
-            <CatChart ms={s.movs} />
-          ) : (
-            <Empty t="Aún no hay gastos para mostrar." />
-          )}
+          <p className="mt-4 text-2xl font-semibold tracking-tight">{pendientes.length}<span className="ml-2 text-sm font-normal text-mute">pendientes</span></p>
+          {pendientes.length ? (
+            <div className="mt-3 space-y-1.5">
+              {pendientes.slice(0, 3).map(t => <div key={t.id} className="flex items-center gap-2.5 rounded-xl border border-white/[0.045] bg-white/[0.02] px-3 py-2.5"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${t.prioridad === 'alta' ? 'bg-neg' : t.prioridad === 'media' ? 'bg-[#ffd27b]' : 'bg-brand/70'}`} /><span className="min-w-0 flex-1 truncate text-sm">{t.titulo}</span>{t.fecha && <span className="shrink-0 text-[10px] text-mute">{formatFecha(t.fecha)}</span>}</div>)}
+            </div>
+          ) : <p className="mt-3 rounded-xl border border-white/[0.045] bg-white/[0.02] px-3 py-3 text-sm text-mute">No tienes tareas pendientes.</p>}
+          <div className="mt-3 flex justify-end"><button type="button" onClick={() => onNavigate?.('tareas')} className="inline-flex items-center gap-1 text-xs font-medium text-brand transition hover:text-white">Ver tareas <ChevronRight size={15} /></button></div>
         </Card>
       </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <Card className="!p-5 sm:!p-6">
+          <div className="mb-3"><h2 className="text-lg font-semibold tracking-tight">Movimientos recientes</h2><p className="mt-1 text-xs text-mute">Tus últimos registros</p></div>
+          {s.movs.length ? <div className="divide-y divide-white/[0.045]">
+            {sorted(s.movs).slice(0, 5).map(m => {
+              const cartera = s.carts.find(c => c.id === m.cartera)
+              const ingreso = m.tipo === 'ingreso'
+              return <div key={m.id} className="flex min-w-0 items-center gap-3 py-3 first:pt-1 last:pb-1">
+                <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${ingreso ? 'bg-brand/[0.08] text-brand' : 'bg-neg/[0.08] text-neg'}`}>{ingreso ? <ArrowDownLeft size={17} /> : <ArrowUpRight size={17} />}</span>
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{m.desc}</p><p className="mt-0.5 truncate text-[11px] text-mute">{m.fecha} · {m.cat}{cartera ? ` · ${cartera.nombre}` : ''}</p></div>
+                <span className={`shrink-0 text-right text-sm font-semibold ${ingreso ? 'text-brand' : 'text-neg'}`}>{ingreso ? '+' : '−'}{money(m.monto)}</span>
+              </div>
+            })}
+          </div> : <Empty t="Sin movimientos todavía. Registra el primero." />}
+        </Card>
+        <Card className="!p-5 sm:!p-6">
+          <div className="mb-3"><h2 className="text-lg font-semibold tracking-tight">Gastos por categoría</h2><p className="mt-1 text-xs text-mute">Distribución de tus gastos registrados</p></div>
+          {s.movs.some(m => m.tipo === 'gasto') ? <CatChart ms={s.movs} /> : <Empty t="Aún no hay gastos para mostrar." />}
+        </Card>
+      </div>
+
+      <section>
+        <div className="mb-3"><p className="text-xs font-medium uppercase tracking-[0.13em] text-brand/75">Movilidad</p><h2 className="mt-1 text-lg font-semibold">Mi moto</h2></div>
+        <Card className="!p-4 sm:!p-5">
+          {s.moto ? <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xl border border-white/[0.06] bg-[#101719] sm:w-48 sm:shrink-0">
+              {s.moto.imagenUrl ? <img src={s.moto.imagenUrl} alt={s.moto.nombre} className="h-full w-full object-contain" /> : <div className="grid h-full place-items-center text-brand/55"><Bike size={32} strokeWidth={1.3} /></div>}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><h3 className="text-base font-semibold">{s.moto.nombre}</h3><span className="text-xs text-mute">{s.moto.anio}</span></div>
+              <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-xs">
+                <span className="inline-flex items-center gap-1.5 text-mute"><Gauge size={14} className="text-brand" /> {s.moto.kilometrajeActual.toLocaleString('es-CO')} km</span>
+                <span className="text-mute">Último cambio de aceite: <strong className="font-medium text-ink">{formatFecha(s.moto.fechaUltimoCambioAceite)}</strong></span>
+              </div>
+            </div>
+            <button type="button" onClick={() => onNavigate?.('moto')} className="inline-flex min-h-10 items-center justify-center gap-1 rounded-xl border border-white/[0.08] px-3 py-2 text-sm font-medium text-ink transition hover:border-brand/25 hover:text-brand sm:shrink-0">Ver moto <ChevronRight size={15} /></button>
+          </div> : <div className="flex items-center gap-3 py-1 text-sm text-mute"><Bike size={20} className="text-brand/70" /> No hay información de la moto disponible.</div>}
+        </Card>
+      </section>
     </div>
   )
 }
-
 export function MovModal({
   s,
   mov,
@@ -3716,6 +3709,1104 @@ export function Tareas({ s }: { s: Store }) {
         </div>
       )}
 
+    </section>
+  )
+}
+
+export function Habitos({ s }: { s: Store }) {
+  const diasSemana = [
+    { id: 1, label: 'Lun', nombre: 'Lunes' },
+    { id: 2, label: 'Mar', nombre: 'Martes' },
+    { id: 3, label: 'Mié', nombre: 'Miércoles' },
+    { id: 4, label: 'Jue', nombre: 'Jueves' },
+    { id: 5, label: 'Vie', nombre: 'Viernes' },
+    { id: 6, label: 'Sáb', nombre: 'Sábado' },
+    { id: 7, label: 'Dom', nombre: 'Domingo' },
+  ]
+  const [showForm, setShowForm] = useState(false)
+  const [editing, setEditing] = useState<Habito | null>(null)
+  const [nombre, setNombre] = useState('')
+  const [descripcion, setDescripcion] = useState('')
+  const [diasSeleccionados, setDiasSeleccionados] = useState<number[]>([1, 2, 3, 4, 5, 6, 7])
+  const [saving, setSaving] = useState(false)
+
+  const fechaHoy = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const ahora = new Date()
+  const hoy = fechaHoy(ahora)
+  const activos = s.habitos.filter(habito => habito.activo)
+  const diaHoy = ((ahora.getDay() + 6) % 7) + 1
+  const diasDe = (habito: Habito) => habito.diasSemana ?? [1, 2, 3, 4, 5, 6, 7]
+  const programadosHoy = activos.filter(habito => diasDe(habito).includes(diaHoy))
+  const noProgramadosHoy = activos.filter(habito => !diasDe(habito).includes(diaHoy))
+  const idsProgramadosHoy = new Set(programadosHoy.map(habito => habito.id))
+  const completadosHoy = new Set(
+    s.registrosHabitos
+      .filter(registro => registro.fecha === hoy && idsProgramadosHoy.has(registro.habito_id))
+      .map(registro => registro.habito_id)
+  )
+
+  const fechaClave = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const rachaActual = (habitoId: string) => {
+    const habito = activos.find(item => item.id === habitoId)
+    if (!habito) return 0
+
+    const dias = diasDe(habito)
+    if (dias.length === 0) return 0
+
+    const fechas = new Set(
+      s.registrosHabitos
+        .filter(registro => registro.habito_id === habitoId)
+        .map(registro => registro.fecha)
+    )
+
+    const cursor = new Date(ahora)
+    if (dias.includes(diaHoy) && !fechas.has(fechaClave(cursor))) {
+      cursor.setDate(cursor.getDate() - 1)
+    }
+
+    let racha = 0
+    while (true) {
+      const dia = ((cursor.getDay() + 6) % 7) + 1
+      if (dias.includes(dia)) {
+        if (!fechas.has(fechaClave(cursor))) break
+        racha += 1
+      }
+      cursor.setDate(cursor.getDate() - 1)
+    }
+    return racha
+  }
+
+  const abrirNuevo = () => {
+    setEditing(null)
+    setNombre('')
+    setDescripcion('')
+    setDiasSeleccionados([1, 2, 3, 4, 5, 6, 7])
+    setShowForm(true)
+  }
+
+  const abrirEdicion = (habito: Habito) => {
+    setEditing(habito)
+    setNombre(habito.nombre)
+    setDescripcion(habito.descripcion ?? '')
+    setDiasSeleccionados([...diasDe(habito)])
+    setShowForm(true)
+  }
+
+  const cerrarFormulario = () => {
+    setShowForm(false)
+    setEditing(null)
+  }
+
+  const guardar = async () => {
+    if (!nombre.trim()) {
+      s.showAlert({
+        title: 'Falta el nombre',
+        message: 'Escribe un nombre para el hábito.',
+        variant: 'warning',
+        confirmText: 'Entendido',
+      })
+      return
+    }
+
+    if (diasSeleccionados.length === 0) {
+      s.showAlert({
+        title: 'Selecciona al menos un día',
+        message: 'El hábito debe tener programado al menos un día de la semana.',
+        variant: 'warning',
+        confirmText: 'Entendido',
+      })
+      return
+    }
+
+    setSaving(true)
+    try {
+      if (editing) {
+        const actualizado = await updateHabito({
+          id: editing.id,
+          nombre,
+          descripcion,
+          diasSemana: [...diasSeleccionados].sort((a, b) => a - b),
+        })
+        s.setHabitos(s.habitos.map(h => h.id === actualizado.id ? actualizado : h))
+      } else {
+        const nuevo = await createHabito({
+          nombre,
+          descripcion,
+          diasSemana: [...diasSeleccionados].sort((a, b) => a - b),
+        })
+        s.setHabitos([...s.habitos, nuevo])
+      }
+      cerrarFormulario()
+    } catch (error) {
+      console.error('ERROR GUARDANDO HÁBITO:', error)
+      s.showAlert({
+        title: 'Error',
+        message: error instanceof Error ? error.message : 'No se pudo guardar el hábito.',
+        variant: 'danger',
+        confirmText: 'Entendido',
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const cambiarCompletado = async (habitoId: string) => {
+    try {
+      if (completadosHoy.has(habitoId)) {
+        await desmarcarHabito(habitoId, hoy)
+        s.setRegistrosHabitos(s.registrosHabitos.filter(registro =>
+          !(registro.habito_id === habitoId && registro.fecha === hoy)
+        ))
+      } else {
+        const registro = await marcarHabito(habitoId, hoy)
+        s.setRegistrosHabitos([
+          ...s.registrosHabitos.filter(r => !(r.habito_id === habitoId && r.fecha === hoy)),
+          registro,
+        ])
+      }
+    } catch (error) {
+      console.error('ERROR ACTUALIZANDO HÁBITO:', error)
+      s.showAlert({
+        title: 'Error',
+        message: error instanceof Error ? error.message : 'No se pudo actualizar el hábito.',
+        variant: 'danger',
+        confirmText: 'Entendido',
+      })
+    }
+  }
+
+  const confirmarEliminacion = (habito: Habito) => {
+    s.showAlert({
+      title: 'Eliminar hábito',
+      message: `¿Seguro que quieres eliminar "${habito.nombre}" y sus registros?`,
+      variant: 'warning',
+      confirmText: 'Eliminar',
+      cancelText: 'Cancelar',
+      onConfirm: async () => {
+        try {
+          await deleteHabito(habito.id)
+          s.setHabitos(s.habitos.filter(h => h.id !== habito.id))
+          s.setRegistrosHabitos(s.registrosHabitos.filter(r => r.habito_id !== habito.id))
+        } catch (error) {
+          console.error('ERROR ELIMINANDO HÁBITO:', error)
+          s.showAlert({
+            title: 'Error',
+            message: error instanceof Error ? error.message : 'No se pudo eliminar el hábito.',
+            variant: 'danger',
+            confirmText: 'Entendido',
+          })
+        }
+      },
+    })
+  }
+
+  const progresoHoy = programadosHoy.length
+    ? Math.round((completadosHoy.size / programadosHoy.length) * 100)
+    : 0
+  const rachaDestacada = activos.reduce(
+    (maxima, habito) => Math.max(maxima, rachaActual(habito.id)),
+    0
+  )
+
+  return (
+    <section className="space-y-6 md:space-y-8">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-brand/75">
+            Productividad
+          </p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">
+            Hábitos
+          </h1>
+          <p className="mt-1 text-sm text-mute">
+            Pequeñas acciones, progreso constante.
+          </p>
+        </div>
+        <button onClick={abrirNuevo} className={btn + ' w-full justify-center sm:w-auto'}>
+          <Plus size={17} /> Nuevo hábito
+        </button>
+      </header>
+
+      <Card className="relative isolate overflow-hidden !p-5 sm:!p-6">
+        <div className="pointer-events-none absolute -right-16 -top-20 -z-10 h-56 w-56 rounded-full bg-brand/[0.12] blur-3xl" />
+        <div className="grid gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-sm text-mute">Tu progreso de hoy</p>
+                <p className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
+                  <span className="text-brand">{completadosHoy.size}</span>
+                  <span className="text-mute/70"> / {programadosHoy.length}</span>
+                </p>
+              </div>
+              <span className="rounded-full border border-brand/15 bg-brand/[0.07] px-3 py-1.5 text-sm font-medium text-brand">
+                {progresoHoy}% completado
+              </span>
+            </div>
+            <div
+              className="mt-5 h-2 overflow-hidden rounded-full bg-white/[0.06]"
+              role="progressbar"
+              aria-label="Progreso de hábitos de hoy"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progresoHoy}
+            >
+              <div
+                className="h-full rounded-full bg-brand transition-[width] duration-500 ease-out"
+                style={{ width: String(progresoHoy) + '%' }}
+              />
+            </div>
+            <p className="mt-2 text-xs text-mute">
+              {programadosHoy.length === 0
+                ? 'No hay hábitos programados para hoy.'
+                : String(programadosHoy.length) + (programadosHoy.length === 1 ? ' hábito programado para hoy' : ' hábitos programados para hoy')}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-black/[0.12] p-4 lg:min-w-52 lg:flex-col lg:items-start">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#ffd27b]/[0.09] text-[#ffd27b]">
+              <Flame size={21} />
+            </div>
+            <div>
+              <p className="text-xs text-mute">Racha actual más alta</p>
+              <p className="mt-0.5 text-xl font-semibold tracking-tight">
+                {rachaDestacada} <span className="text-sm font-normal text-mute">{rachaDestacada === 1 ? 'día' : 'días'}</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <section className="space-y-3">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Hábitos de hoy</h2>
+            <p className="mt-1 text-xs text-mute">Marca cada hábito cuando lo completes.</p>
+          </div>
+          <span className="rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-xs text-mute">
+            {programadosHoy.length} {programadosHoy.length === 1 ? 'programado' : 'programados'}
+          </span>
+        </div>
+
+        {programadosHoy.length === 0 ? (
+          <Card className="!border-dashed !bg-white/[0.015] !p-7 sm:!p-9">
+            <div className="mx-auto flex max-w-sm flex-col items-center text-center">
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-brand/[0.08] text-brand">
+                <CheckCircle2 size={23} />
+              </div>
+              <p className="mt-4 font-medium text-ink">
+                {activos.length === 0 ? 'Empieza con tu primer hábito' : 'Hoy tienes un día más ligero'}
+              </p>
+              <p className="mt-1 text-sm text-mute">
+                {activos.length === 0
+                  ? 'Crea un hábito para comenzar a registrar tu progreso.'
+                  : 'No hay hábitos programados para hoy.'}
+              </p>
+            </div>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {programadosHoy.map(habito => {
+              const completado = completadosHoy.has(habito.id)
+              const racha = rachaActual(habito.id)
+              return (
+                <Card
+                  key={habito.id}
+                  className={completado
+                    ? '!border-brand/20 !bg-brand/[0.035] !p-4 sm:!p-5'
+                    : '!p-4 hover:-translate-y-0.5 hover:bg-white/[0.035] sm:!p-5'}
+                >
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <button
+                      onClick={() => cambiarCompletado(habito.id)}
+                      className={completado
+                        ? 'mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-brand/30 bg-brand/15 text-brand transition-all duration-200 active:scale-95'
+                        : 'mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-white/[0.08] bg-white/[0.025] text-mute transition-all duration-200 hover:border-brand/30 hover:text-brand active:scale-95'}
+                      title={completado ? 'Desmarcar hoy' : 'Marcar como completado hoy'}
+                      aria-label={completado ? 'Desmarcar ' + habito.nombre : 'Completar ' + habito.nombre}
+                    >
+                      {completado ? <CheckCircle2 size={21} /> : <Circle size={21} />}
+                    </button>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className={completado
+                              ? 'break-words font-semibold tracking-tight text-brand'
+                              : 'break-words font-semibold tracking-tight text-ink'}>
+                              {habito.nombre}
+                            </h3>
+                            {completado && (
+                              <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand">
+                                Completado
+                              </span>
+                            )}
+                          </div>
+                          {habito.descripcion && (
+                            <p className="mt-1 text-sm leading-relaxed text-mute">{habito.descripcion}</p>
+                          )}
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button
+                            onClick={() => abrirEdicion(habito)}
+                            className="rounded-lg p-2 text-mute transition-colors hover:bg-white/[0.05] hover:text-ink"
+                            title="Editar hábito"
+                            aria-label={'Editar ' + habito.nombre}
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            onClick={() => confirmarEliminacion(habito)}
+                            className="rounded-lg p-2 text-mute transition-colors hover:bg-neg/[0.08] hover:text-neg"
+                            title="Eliminar hábito"
+                            aria-label={'Eliminar ' + habito.nombre}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-[#ffd27b]/10 bg-[#ffd27b]/[0.05] px-2.5 py-1.5 text-xs font-medium text-[#ffd27b]">
+                          <Flame size={14} />
+                          {racha} {racha === 1 ? 'día' : 'días'} de racha
+                        </span>
+                        <div className="flex flex-wrap gap-1.5" aria-label="Días programados">
+                          {diasSemana.filter(dia => diasDe(habito).includes(dia.id)).map(dia => (
+                            <span
+                              key={dia.id}
+                              title={dia.nombre}
+                              className="rounded-md border border-white/[0.06] bg-white/[0.025] px-2 py-1 text-[10px] font-medium text-mute"
+                            >
+                              {dia.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      {noProgramadosHoy.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-base font-semibold tracking-tight text-ink/90">No programados hoy</h2>
+            <p className="mt-1 text-xs text-mute">No cuentan como pendientes ni afectan tu progreso de hoy.</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {noProgramadosHoy.map(habito => (
+              <Card key={habito.id} className="!bg-white/[0.015] !p-3.5 opacity-90 hover:opacity-100 sm:!p-4">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/[0.035] text-mute/70">
+                    <Circle size={17} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-ink/85">{habito.nombre}</p>
+                    <p className="mt-1 truncate text-[11px] text-mute/80">
+                      {diasSemana.filter(dia => diasDe(habito).includes(dia.id)).map(dia => dia.nombre).join(', ')}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <button
+                      onClick={() => abrirEdicion(habito)}
+                      className="rounded-lg p-2 text-mute/70 transition-colors hover:bg-white/[0.05] hover:text-ink"
+                      title="Editar hábito"
+                      aria-label={'Editar ' + habito.nombre}
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      onClick={() => confirmarEliminacion(habito)}
+                      className="rounded-lg p-2 text-mute/70 transition-colors hover:bg-neg/[0.08] hover:text-neg"
+                      title="Eliminar hábito"
+                      aria-label={'Eliminar ' + habito.nombre}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {showForm && (
+        <Modal title={editing ? 'Editar hábito' : 'Nuevo hábito'} onClose={cerrarFormulario}>
+          <div className="space-y-5">
+            <p className="-mt-2 text-sm text-mute">
+              {editing ? 'Ajusta los detalles y la rutina semanal.' : 'Define el hábito y los días en que quieres practicarlo.'}
+            </p>
+
+            <div className="space-y-4">
+              <Field label="Nombre">
+                <input
+                  value={nombre}
+                  onChange={e => setNombre(e.target.value)}
+                  className={inp}
+                  placeholder="Ej. Leer 10 minutos"
+                  autoFocus
+                />
+              </Field>
+              <Field label="Descripción (opcional)">
+                <textarea
+                  value={descripcion}
+                  onChange={e => setDescripcion(e.target.value)}
+                  className={inp + ' min-h-[88px] resize-none'}
+                  placeholder="Añade un detalle que te ayude a recordar tu intención"
+                />
+              </Field>
+            </div>
+
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3.5 sm:p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-ink">Días programados</p>
+                  <p className="mt-0.5 text-xs text-mute">Elige uno o varios días de la semana.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDiasSeleccionados([1, 2, 3, 4, 5, 6, 7])}
+                  className={diasSeleccionados.length === 7
+                    ? 'shrink-0 rounded-full bg-brand/15 px-3 py-1.5 text-xs font-medium text-brand transition-colors'
+                    : 'shrink-0 rounded-full border border-white/[0.07] bg-white/[0.025] px-3 py-1.5 text-xs font-medium text-mute transition-colors hover:text-ink'}
+                >
+                  Todos los días
+                </button>
+              </div>
+              <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+                {diasSemana.map(dia => {
+                  const seleccionado = diasSeleccionados.includes(dia.id)
+                  return (
+                    <button
+                      key={dia.id}
+                      type="button"
+                      aria-pressed={seleccionado}
+                      aria-label={dia.nombre}
+                      onClick={() => setDiasSeleccionados(actual =>
+                        seleccionado
+                          ? actual.filter(id => id !== dia.id)
+                          : [...actual, dia.id].sort((a, b) => a - b)
+                      )}
+                      className={seleccionado
+                        ? 'min-h-10 rounded-xl border border-brand/30 bg-brand/[0.11] text-[11px] font-semibold text-brand shadow-[inset_0_0_0_1px_rgba(112,214,165,0.04)] transition-all duration-150 active:scale-95 sm:text-xs'
+                        : 'min-h-10 rounded-xl border border-white/[0.07] bg-white/[0.02] text-[11px] font-semibold text-mute transition-all duration-150 hover:border-white/[0.13] hover:text-ink active:scale-95 sm:text-xs'}
+                    >
+                      <span className="sm:hidden">{dia.label}</span>
+                      <span className="hidden sm:inline">{dia.nombre.slice(0, 3)}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-white/[0.06] pt-4 sm:flex-row sm:justify-end">
+              <button
+                onClick={cerrarFormulario}
+                className="rounded-xl px-4 py-2.5 text-sm text-mute transition-colors hover:bg-white/[0.04] hover:text-ink"
+              >
+                Cancelar
+              </button>
+              <button onClick={guardar} className={btn + ' justify-center'} disabled={saving}>
+                <Check size={17} /> {saving ? 'Guardando…' : editing ? 'Guardar cambios' : 'Crear hábito'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </section>
+  )
+}
+
+
+export function MotoPage({ s }: { s: Store }) {
+  const categoriasGasto = ['Combustible', 'Mantenimiento', 'Repuestos', 'Accesorios', 'Lavado', 'Otros']
+  const tiposSugeridos = [
+    'Cambio de aceite',
+    'Llantas',
+    'Kit de arrastre',
+    'Frenos',
+    'Bujía',
+    'Limpieza / mantenimiento',
+    'Reparación',
+    'Repuesto',
+    'Otro',
+  ]
+  const [editandoMoto, setEditandoMoto] = useState(false)
+  const [motoForm, setMotoForm] = useState({
+    nombre: 'Pulsar NS160 FI',
+    marca: 'Bajaj',
+    modelo: 'NS160 FI',
+    anio: '2023',
+    kilometrajeActual: '0',
+    imagenUrl: '',
+    ultimoCambioAceite: '',
+    fechaUltimoCambioAceite: '',
+    notas: '',
+  })
+  const [mantenimientoFormOpen, setMantenimientoFormOpen] = useState(false)
+  const [mantenimientoEditando, setMantenimientoEditando] = useState<MantenimientoMoto | null>(null)
+  const [mantenimientoForm, setMantenimientoForm] = useState({
+    tipo: '',
+    fecha: new Date().toLocaleDateString('sv'),
+    kilometraje: String(s.moto?.kilometrajeActual ?? 0),
+    costo: '0',
+    notas: '',
+  })
+  const [gastoFormOpen, setGastoFormOpen] = useState(false)
+  const [gastoEditando, setGastoEditando] = useState<GastoMoto | null>(null)
+  const [gastoForm, setGastoForm] = useState({
+    categoria: 'Combustible',
+    descripcion: '',
+    valor: '',
+    fecha: new Date().toLocaleDateString('sv'),
+  })
+  const [guardando, setGuardando] = useState(false)
+  const [imagenSeleccionada, setImagenSeleccionada] = useState<File | null>(null)
+  const [previewImagen, setPreviewImagen] = useState<string | null>(null)
+  const [subiendoImagen, setSubiendoImagen] = useState(false)
+  const [errorImagen, setErrorImagen] = useState('')
+  const inputImagenRef = useRef<HTMLInputElement>(null)
+
+  const formatFecha = (fecha?: string) => {
+    if (!fecha) return 'Sin registrar'
+    const [year, month, day] = fecha.slice(0, 10).split('-')
+    if (!year || !month || !day) return fecha
+    return new Date(Number(year), Number(month) - 1, Number(day))
+      .toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })
+  }
+  const formatKm = (km: number) => Number(km || 0).toLocaleString('es-CO') + ' km'
+  const setMotoField = (field: keyof typeof motoForm, value: string) =>
+    setMotoForm(current => ({ ...current, [field]: value }))
+  const setMantenimientoField = (field: keyof typeof mantenimientoForm, value: string) =>
+    setMantenimientoForm(current => ({ ...current, [field]: value }))
+  const setGastoField = (field: keyof typeof gastoForm, value: string) =>
+    setGastoForm(current => ({ ...current, [field]: value }))
+
+  const abrirEdicionMoto = () => {
+    if (previewImagen) URL.revokeObjectURL(previewImagen)
+    setImagenSeleccionada(null)
+    setPreviewImagen(null)
+    setErrorImagen('')
+    setMotoForm({
+      nombre: s.moto?.nombre ?? 'Pulsar NS160 FI',
+      marca: s.moto?.marca ?? 'Bajaj',
+      modelo: s.moto?.modelo ?? 'NS160 FI',
+      anio: String(s.moto?.anio ?? 2023),
+      kilometrajeActual: String(s.moto?.kilometrajeActual ?? 0),
+      imagenUrl: s.moto?.imagenUrl ?? '',
+      ultimoCambioAceite: s.moto?.ultimoCambioAceite == null ? '' : String(s.moto.ultimoCambioAceite),
+      fechaUltimoCambioAceite: s.moto?.fechaUltimoCambioAceite ?? '',
+      notas: s.moto?.notas ?? '',
+    })
+    setEditandoMoto(true)
+  }
+
+  const seleccionarImagen = (file?: File) => {
+    if (!file) return
+    const tiposPermitidos = ['image/jpeg', 'image/png', 'image/webp']
+    if (!tiposPermitidos.includes(file.type)) {
+      setErrorImagen('Selecciona una imagen JPG, PNG o WEBP.')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorImagen('La imagen no puede superar los 10 MB.')
+      return
+    }
+    if (previewImagen) URL.revokeObjectURL(previewImagen)
+    setImagenSeleccionada(file)
+    setPreviewImagen(URL.createObjectURL(file))
+    setErrorImagen('')
+  }
+
+  const cerrarEdicionMoto = () => {
+    if (previewImagen) URL.revokeObjectURL(previewImagen)
+    setImagenSeleccionada(null)
+    setPreviewImagen(null)
+    setErrorImagen('')
+    setEditandoMoto(false)
+  }
+
+  const subirImagenMoto = async () => {
+    if (!imagenSeleccionada) return
+    setSubiendoImagen(true)
+    let imagenSubida = false
+    try {
+      const url = await uploadMotoImage(imagenSeleccionada)
+      imagenSubida = true
+      const moto = await updateMotoImage(url)
+      s.setMoto(moto)
+      setMotoField('imagenUrl', url)
+      if (previewImagen) URL.revokeObjectURL(previewImagen)
+      setImagenSeleccionada(null)
+      setPreviewImagen(null)
+      setErrorImagen('')
+    } catch (error) {
+      console.error('ERROR SUBIENDO IMAGEN DE MOTO:', error)
+      setErrorImagen(imagenSubida
+        ? 'La imagen se subió, pero no se pudo guardar su URL en la moto. Inténtalo de nuevo.'
+        : `No se pudo subir la imagen: ${error instanceof Error ? error.message : 'revisa la conexión y las políticas de Storage.'}`)
+    } finally {
+      setSubiendoImagen(false)
+    }
+  }
+
+  const guardarMotoInfo = async () => {
+    if (!motoForm.nombre.trim() || !motoForm.marca.trim() || !motoForm.modelo.trim()) {
+      s.showAlert({ title: 'Faltan datos', message: 'Completa el nombre, la marca y el modelo.', variant: 'warning' })
+      return
+    }
+    setGuardando(true)
+    try {
+      const moto = await saveMoto({
+        id: 1,
+        nombre: motoForm.nombre,
+        marca: motoForm.marca,
+        modelo: motoForm.modelo,
+        anio: Number(motoForm.anio) || 2023,
+        kilometrajeActual: Number(motoForm.kilometrajeActual) || 0,
+        imagenUrl: motoForm.imagenUrl,
+        ultimoCambioAceite: motoForm.ultimoCambioAceite ? Number(motoForm.ultimoCambioAceite) : undefined,
+        fechaUltimoCambioAceite: motoForm.fechaUltimoCambioAceite || undefined,
+        notas: motoForm.notas,
+      })
+      s.setMoto(moto)
+      setEditandoMoto(false)
+    } catch (error) {
+      console.error('ERROR GUARDANDO LA MOTO:', error)
+      s.showAlert({ title: 'Error', message: error instanceof Error ? error.message : 'No se pudo guardar la información de la moto.', variant: 'danger' })
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  const abrirNuevoMantenimiento = () => {
+    setMantenimientoEditando(null)
+    setMantenimientoForm({
+      tipo: '',
+      fecha: new Date().toLocaleDateString('sv'),
+      kilometraje: String(s.moto?.kilometrajeActual ?? 0),
+      costo: '0',
+      notas: '',
+    })
+    setMantenimientoFormOpen(true)
+  }
+  const abrirEdicionMantenimiento = (registro: MantenimientoMoto) => {
+    setMantenimientoEditando(registro)
+    setMantenimientoForm({
+      tipo: registro.tipo,
+      fecha: registro.fecha,
+      kilometraje: String(registro.kilometraje),
+      costo: String(registro.costo),
+      notas: registro.notas ?? '',
+    })
+    setMantenimientoFormOpen(true)
+  }
+  const guardarMantenimiento = async () => {
+    if (!mantenimientoForm.tipo.trim() || !mantenimientoForm.fecha) {
+      s.showAlert({ title: 'Faltan datos', message: 'Indica el tipo y la fecha del mantenimiento.', variant: 'warning' })
+      return
+    }
+    setGuardando(true)
+    try {
+      const values = {
+        tipo: mantenimientoForm.tipo,
+        fecha: mantenimientoForm.fecha,
+        kilometraje: Number(mantenimientoForm.kilometraje) || 0,
+        costo: Number(mantenimientoForm.costo) || 0,
+        notas: mantenimientoForm.notas,
+      }
+      const actualizado = mantenimientoEditando
+        ? await updateMantenimientoMoto({ ...values, id: mantenimientoEditando.id, created_at: mantenimientoEditando.created_at })
+        : await createMantenimientoMoto(values)
+      s.setMantenimientosMoto(
+        [...s.mantenimientosMoto.filter(item => item.id !== actualizado.id), actualizado]
+          .sort((a, b) => b.fecha.localeCompare(a.fecha))
+      )
+      setMantenimientoFormOpen(false)
+    } catch (error) {
+      console.error('ERROR GUARDANDO MANTENIMIENTO:', error)
+      s.showAlert({ title: 'Error', message: error instanceof Error ? error.message : 'No se pudo guardar el mantenimiento.', variant: 'danger' })
+    } finally {
+      setGuardando(false)
+    }
+  }
+  const confirmarEliminarMantenimiento = (registro: MantenimientoMoto) => {
+    s.showAlert({
+      title: 'Eliminar mantenimiento',
+      message: '¿Quieres eliminar el registro de "' + registro.tipo + '"?',
+      variant: 'warning',
+      confirmText: 'Eliminar',
+      cancelText: 'Cancelar',
+      onConfirm: async () => {
+        try {
+          await deleteMantenimientoMoto(registro.id)
+          s.setMantenimientosMoto(s.mantenimientosMoto.filter(item => item.id !== registro.id))
+        } catch (error) {
+          console.error('ERROR ELIMINANDO MANTENIMIENTO:', error)
+          s.showAlert({ title: 'Error', message: error instanceof Error ? error.message : 'No se pudo eliminar el mantenimiento.', variant: 'danger' })
+        }
+      },
+    })
+  }
+
+  const abrirNuevoGasto = () => {
+    setGastoEditando(null)
+    setGastoForm({ categoria: 'Combustible', descripcion: '', valor: '', fecha: new Date().toLocaleDateString('sv') })
+    setGastoFormOpen(true)
+  }
+  const abrirEdicionGasto = (gasto: GastoMoto) => {
+    setGastoEditando(gasto)
+    setGastoForm({ categoria: gasto.categoria, descripcion: gasto.descripcion, valor: String(gasto.valor), fecha: gasto.fecha })
+    setGastoFormOpen(true)
+  }
+  const guardarGasto = async () => {
+    if (!gastoForm.descripcion.trim() || !gastoForm.fecha || Number(gastoForm.valor) <= 0) {
+      s.showAlert({ title: 'Revisa los datos', message: 'Completa la descripción, la fecha y un valor mayor que cero.', variant: 'warning' })
+      return
+    }
+    setGuardando(true)
+    try {
+      const values = {
+        categoria: gastoForm.categoria,
+        descripcion: gastoForm.descripcion,
+        valor: Number(gastoForm.valor),
+        fecha: gastoForm.fecha,
+      }
+      const actualizado = gastoEditando
+        ? await updateGastoMoto({ ...values, id: gastoEditando.id, created_at: gastoEditando.created_at })
+        : await createGastoMoto(values)
+      s.setGastosMoto(
+        [...s.gastosMoto.filter(item => item.id !== actualizado.id), actualizado]
+          .sort((a, b) => b.fecha.localeCompare(a.fecha))
+      )
+      setGastoFormOpen(false)
+    } catch (error) {
+      console.error('ERROR GUARDANDO GASTO DE MOTO:', error)
+      s.showAlert({ title: 'Error', message: error instanceof Error ? error.message : 'No se pudo guardar el gasto.', variant: 'danger' })
+    } finally {
+      setGuardando(false)
+    }
+  }
+  const confirmarEliminarGasto = (gasto: GastoMoto) => {
+    s.showAlert({
+      title: 'Eliminar gasto',
+      message: '¿Quieres eliminar "' + gasto.descripcion + '"?',
+      variant: 'warning',
+      confirmText: 'Eliminar',
+      cancelText: 'Cancelar',
+      onConfirm: async () => {
+        try {
+          await deleteGastoMoto(gasto.id)
+          s.setGastosMoto(s.gastosMoto.filter(item => item.id !== gasto.id))
+        } catch (error) {
+          console.error('ERROR ELIMINANDO GASTO DE MOTO:', error)
+          s.showAlert({ title: 'Error', message: error instanceof Error ? error.message : 'No se pudo eliminar el gasto.', variant: 'danger' })
+        }
+      },
+    })
+  }
+
+  const totalGastos = s.gastosMoto.reduce((total, gasto) => total + gasto.valor, 0)
+  const gastosPorCategoria = Object.entries(
+    s.gastosMoto.reduce<Record<string, number>>((totales, gasto) => {
+      totales[gasto.categoria] = (totales[gasto.categoria] ?? 0) + gasto.valor
+      return totales
+    }, {})
+  ).sort((a, b) => b[1] - a[1])
+  const gastoMaximoCategoria = Math.max(1, ...gastosPorCategoria.map(([, valor]) => valor))
+  const motoNombre = s.moto?.nombre ?? 'Pulsar NS160 FI'
+  const motoAnio = s.moto?.anio ?? 2023
+
+  const campo = (label: string, input: ReactNode) => (
+    <Field label={label}>{input}</Field>
+  )
+
+  return (
+    <section className="space-y-6 md:space-y-8">
+      <Card className="relative isolate overflow-hidden !p-0">
+        <div className="relative aspect-video max-h-[520px] overflow-hidden bg-[#101719]">
+          {s.moto?.imagenUrl ? (
+            <img src={s.moto.imagenUrl} alt={motoNombre} className="absolute inset-0 h-full w-full bg-[#101719] object-contain" />
+          ) : (
+            <div className="absolute inset-0 grid place-items-center bg-[radial-gradient(circle_at_70%_30%,rgba(112,214,165,0.15),transparent_40%),linear-gradient(135deg,#151f20,#0a0d0f)]">
+              <div className="grid h-24 w-24 place-items-center rounded-3xl border border-white/[0.08] bg-black/20 text-brand/70 backdrop-blur">
+                <Bike size={54} strokeWidth={1.2} />
+              </div>
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-[#080b0c]/95 via-[#080b0c]/20 to-black/20" />
+          <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+            <button onClick={abrirEdicionMoto} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm text-white/90 backdrop-blur-md transition hover:bg-black/55">
+              <Pencil size={15} /> <span className="hidden sm:inline">Editar moto</span><span className="sm:hidden">Editar</span>
+            </button>
+          </div>
+          <div className="absolute inset-x-0 bottom-0 p-5 sm:p-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">Mi moto</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white drop-shadow sm:text-5xl">
+              {motoNombre}
+            </h1>
+            <p className="mt-1 text-sm text-white/75">{s.moto?.marca ?? 'Bajaj'} · {s.moto?.modelo ?? 'NS160 FI'} · {motoAnio}</p>
+            <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm font-medium text-white/90 backdrop-blur-md">
+              <Gauge size={17} className="text-brand" />
+              {formatKm(s.moto?.kilometrajeActual ?? 0)}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card className="!p-4 sm:!p-5">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand/[0.08] text-brand"><Gauge size={19} /></span>
+            <div><p className="text-xs text-mute">Kilometraje actual</p><p className="mt-1 font-semibold">{formatKm(s.moto?.kilometrajeActual ?? 0)}</p></div>
+          </div>
+        </Card>
+        <Card className="!p-4 sm:!p-5">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#7bb6ff]/[0.08] text-[#7bb6ff]"><Droplets size={19} /></span>
+            <div><p className="text-xs text-mute">Último cambio de aceite</p><p className="mt-1 font-semibold">{s.moto?.ultimoCambioAceite == null ? 'Sin registrar' : formatKm(s.moto.ultimoCambioAceite)}</p></div>
+          </div>
+        </Card>
+        <Card className="!p-4 sm:!p-5">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#ffd27b]/[0.08] text-[#ffd27b]"><CalendarDays size={19} /></span>
+            <div><p className="text-xs text-mute">Fecha del cambio</p><p className="mt-1 font-semibold">{formatFecha(s.moto?.fechaUltimoCambioAceite)}</p></div>
+          </div>
+        </Card>
+      </div>
+
+      <section className="space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-brand/75">Historial</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight">Mantenimientos</h2>
+            <p className="mt-1 text-sm text-mute">Servicios y reparaciones realizados.</p>
+          </div>
+          <button onClick={abrirNuevoMantenimiento} className={btn + ' w-full justify-center sm:w-auto'}>
+            <Plus size={17} /> Registrar mantenimiento
+          </button>
+        </div>
+
+        {s.mantenimientosMoto.length === 0 ? (
+          <Card><Empty t="Aún no hay mantenimientos registrados." /></Card>
+        ) : (
+          <div className="space-y-3">
+            {s.mantenimientosMoto.map(registro => (
+              <Card key={registro.id} className="!p-4 sm:!p-5">
+                <div className="flex items-start gap-3">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand/[0.08] text-brand"><Wrench size={18} /></span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <h3 className="font-semibold">{registro.tipo}</h3>
+                        <p className="mt-1 text-xs text-mute">{formatFecha(registro.fecha)}</p>
+                      </div>
+                      <p className="font-semibold text-brand">{money(registro.costo)}</p>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-mute">
+                      <span className="inline-flex items-center gap-1.5"><Gauge size={14} /> {formatKm(registro.kilometraje)}</span>
+                    </div>
+                    {registro.notas && <p className="mt-3 border-t border-white/[0.05] pt-3 text-sm leading-relaxed text-mute">{registro.notas}</p>}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <button onClick={() => abrirEdicionMantenimiento(registro)} aria-label="Editar mantenimiento" title="Editar" className="rounded-lg p-2 text-mute transition hover:bg-white/[0.05] hover:text-ink"><Pencil size={15} /></button>
+                    <button onClick={() => confirmarEliminarMantenimiento(registro)} aria-label="Eliminar mantenimiento" title="Eliminar" className="rounded-lg p-2 text-mute transition hover:bg-neg/[0.08] hover:text-neg"><Trash2 size={15} /></button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.16em] text-brand/75">Gastos</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight">Gastos de la moto</h2>
+            <p className="mt-1 text-sm text-mute">Registro de costos asociados.</p>
+          </div>
+          <button onClick={abrirNuevoGasto} className={btn + ' w-full justify-center sm:w-auto'}>
+            <Plus size={17} /> Agregar gasto
+          </button>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[0.8fr_1.2fr]">
+          <Card className="relative isolate overflow-hidden !p-5 sm:!p-6">
+            <div className="pointer-events-none absolute -right-12 -top-16 -z-10 h-40 w-40 rounded-full bg-brand/[0.08] blur-3xl" />
+            <p className="text-sm text-mute">Total de gastos registrados</p>
+            <p className="mt-3 break-words text-3xl font-semibold tracking-tight text-brand">{money(totalGastos)}</p>
+            <p className="mt-2 text-xs text-mute">{s.gastosMoto.length} {s.gastosMoto.length === 1 ? 'registro' : 'registros'}</p>
+          </Card>
+          <Card className="!p-5 sm:!p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <Tag size={17} className="text-brand" />
+              <h3 className="font-semibold">Gastos por categoría</h3>
+            </div>
+            {gastosPorCategoria.length === 0 ? (
+              <p className="text-sm text-mute">Las categorías aparecerán al registrar gastos.</p>
+            ) : (
+              <div className="space-y-3">
+                {gastosPorCategoria.map(([categoria, valor]) => (
+                  <div key={categoria}>
+                    <div className="mb-1 flex items-center justify-between gap-3 text-xs">
+                      <span className="truncate text-mute">{categoria}</span>
+                      <span className="shrink-0 text-ink/90">{money(valor)}</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
+                      <div className="h-full rounded-full bg-brand/75" style={{ width: String((valor / gastoMaximoCategoria) * 100) + '%' }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+
+        <div className="flex items-center gap-2 pt-2">
+          <CircleDollarSign size={18} className="text-brand" />
+          <h3 className="font-semibold">Gastos recientes</h3>
+        </div>
+        {s.gastosMoto.length === 0 ? (
+          <Card><Empty t="Aún no hay gastos registrados." /></Card>
+        ) : (
+          <div className="space-y-2">
+            {s.gastosMoto.slice(0, 10).map(gasto => (
+              <Card key={gasto.id} className="!p-3.5 sm:!p-4">
+                <div className="flex items-center gap-3">
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/[0.035] text-mute"><Fuel size={17} /></span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-medium">{gasto.descripcion}</p>
+                      <span className="rounded-full border border-white/[0.06] bg-white/[0.025] px-2 py-0.5 text-[10px] text-mute">{gasto.categoria}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-mute">{formatFecha(gasto.fecha)}</p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold">{money(gasto.valor)}</p>
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <button onClick={() => abrirEdicionGasto(gasto)} aria-label="Editar gasto" title="Editar" className="rounded-lg p-2 text-mute transition hover:bg-white/[0.05] hover:text-ink"><Pencil size={15} /></button>
+                    <button onClick={() => confirmarEliminarGasto(gasto)} aria-label="Eliminar gasto" title="Eliminar" className="rounded-lg p-2 text-mute transition hover:bg-neg/[0.08] hover:text-neg"><Trash2 size={15} /></button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {editandoMoto && (
+        <Modal title="Información de la moto" onClose={cerrarEdicionMoto}>
+          <div className="max-h-[72vh] space-y-4 overflow-y-auto pr-1">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {campo('Nombre', <input value={motoForm.nombre} onChange={e => setMotoField('nombre', e.target.value)} className={inp} />)}
+              {campo('Marca', <input value={motoForm.marca} onChange={e => setMotoField('marca', e.target.value)} className={inp} />)}
+              {campo('Modelo', <input value={motoForm.modelo} onChange={e => setMotoField('modelo', e.target.value)} className={inp} />)}
+              {campo('Año', <input type="number" min="1900" max="2100" value={motoForm.anio} onChange={e => setMotoField('anio', e.target.value)} className={inp} />)}
+              {campo('Kilometraje actual', <input type="number" min="0" value={motoForm.kilometrajeActual} onChange={e => setMotoField('kilometrajeActual', e.target.value)} className={inp} />)}
+              {campo('Último cambio de aceite (km)', <input type="number" min="0" value={motoForm.ultimoCambioAceite} onChange={e => setMotoField('ultimoCambioAceite', e.target.value)} className={inp} />)}
+              {campo('Fecha del último cambio de aceite', <input type="date" value={motoForm.fechaUltimoCambioAceite} onChange={e => setMotoField('fechaUltimoCambioAceite', e.target.value)} className={inp} />)}
+            </div>
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-medium text-ink">Imagen de la moto</p>
+                <p className="mt-1 text-xs text-mute">Vista 16:9 · se recomienda una imagen de 1600 × 900 px. No se recorta.</p>
+              </div>
+              <div className="relative aspect-video overflow-hidden rounded-2xl border border-white/[0.08] bg-[#101719]">
+                {previewImagen || motoForm.imagenUrl ? (
+                  <img src={previewImagen ?? motoForm.imagenUrl} alt="Vista previa de la moto" className="h-full w-full object-contain" />
+                ) : (
+                  <div className="grid h-full place-items-center text-brand/60"><Bike size={42} strokeWidth={1.3} /></div>
+                )}
+              </div>
+              <input
+                ref={inputImagenRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                className="sr-only"
+                onChange={e => { seleccionarImagen(e.target.files?.[0]); e.target.value = '' }}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => inputImagenRef.current?.click()} disabled={subiendoImagen} className="rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-sm text-ink transition hover:bg-white/[0.08] disabled:opacity-50">
+                  Cambiar imagen
+                </button>
+                {imagenSeleccionada && <>
+                  <span className="max-w-full truncate text-xs text-mute">{imagenSeleccionada.name}</span>
+                  <button type="button" onClick={subirImagenMoto} disabled={subiendoImagen} className={btn}>
+                    {subiendoImagen ? 'Subiendo…' : 'Subir imagen'}
+                  </button>
+                </>}
+              </div>
+              <p className="text-xs text-mute">JPG, PNG o WEBP · Máximo 10 MB.</p>
+              {errorImagen && <p role="alert" className="text-sm text-red-300">{errorImagen}</p>}
+            </div>
+            {campo('Notas', <textarea value={motoForm.notas} onChange={e => setMotoField('notas', e.target.value)} className={inp + ' min-h-[80px] resize-y'} />)}
+            <div className="flex justify-end gap-2 border-t border-white/[0.06] pt-4">
+              <button onClick={cerrarEdicionMoto} className="rounded-xl px-4 py-2.5 text-sm text-mute hover:bg-white/[0.04] hover:text-ink">Cancelar</button>
+              <button onClick={guardarMotoInfo} disabled={guardando || subiendoImagen} className={btn}><Check size={16} /> {guardando ? 'Guardando…' : 'Guardar'}</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {mantenimientoFormOpen && (
+        <Modal title={mantenimientoEditando ? 'Editar mantenimiento' : 'Registrar mantenimiento'} onClose={() => setMantenimientoFormOpen(false)}>
+          <div className="max-h-[72vh] space-y-4 overflow-y-auto pr-1">
+            {campo('Tipo', <input list="tipos-mantenimiento-moto" value={mantenimientoForm.tipo} onChange={e => setMantenimientoField('tipo', e.target.value)} className={inp} placeholder="Ej. Cambio de aceite" autoFocus />)}
+            <datalist id="tipos-mantenimiento-moto">{tiposSugeridos.map(tipo => <option key={tipo} value={tipo} />)}</datalist>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {campo('Fecha', <input type="date" value={mantenimientoForm.fecha} onChange={e => setMantenimientoField('fecha', e.target.value)} className={inp} />)}
+              {campo('Kilometraje', <input type="number" min="0" value={mantenimientoForm.kilometraje} onChange={e => setMantenimientoField('kilometraje', e.target.value)} className={inp} />)}
+              {campo('Costo', <input type="number" min="0" step="100" value={mantenimientoForm.costo} onChange={e => setMantenimientoField('costo', e.target.value)} className={inp} />)}
+            </div>
+            {campo('Notas (opcional)', <textarea value={mantenimientoForm.notas} onChange={e => setMantenimientoField('notas', e.target.value)} className={inp + ' min-h-[80px] resize-y'} />)}
+            <div className="flex justify-end gap-2 border-t border-white/[0.06] pt-4">
+              <button onClick={() => setMantenimientoFormOpen(false)} className="rounded-xl px-4 py-2.5 text-sm text-mute hover:bg-white/[0.04] hover:text-ink">Cancelar</button>
+              <button onClick={guardarMantenimiento} disabled={guardando} className={btn}><Check size={16} /> {guardando ? 'Guardando…' : 'Guardar'}</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {gastoFormOpen && (
+        <Modal title={gastoEditando ? 'Editar gasto' : 'Agregar gasto'} onClose={() => setGastoFormOpen(false)}>
+          <div className="space-y-4">
+            {campo('Categoría', (
+              <select value={gastoForm.categoria} onChange={e => setGastoField('categoria', e.target.value)} className={inp}>
+                {categoriasGasto.map(categoria => <option key={categoria} value={categoria}>{categoria}</option>)}
+              </select>
+            ))}
+            {campo('Descripción', <input value={gastoForm.descripcion} onChange={e => setGastoField('descripcion', e.target.value)} className={inp} placeholder="Ej. Tanqueo en estación" autoFocus />)}
+            <div className="grid gap-3 sm:grid-cols-2">
+              {campo('Valor', <input type="number" min="1" step="100" value={gastoForm.valor} onChange={e => setGastoField('valor', e.target.value)} className={inp} />)}
+              {campo('Fecha', <input type="date" value={gastoForm.fecha} onChange={e => setGastoField('fecha', e.target.value)} className={inp} />)}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-white/[0.06] pt-4">
+              <button onClick={() => setGastoFormOpen(false)} className="rounded-xl px-4 py-2.5 text-sm text-mute hover:bg-white/[0.04] hover:text-ink">Cancelar</button>
+              <button onClick={guardarGasto} disabled={guardando} className={btn}><Check size={16} /> {guardando ? 'Guardando…' : 'Guardar'}</button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </section>
   )
 }

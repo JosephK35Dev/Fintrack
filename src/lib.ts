@@ -37,6 +37,57 @@ export interface Tarea {
   created_at: string
 }
 
+export interface Habito {
+  id: string
+  nombre: string
+  descripcion?: string
+  diasSemana: number[]
+  activo: boolean
+  created_at: string
+}
+
+export const DIAS_SEMANA_TODOS = [1, 2, 3, 4, 5, 6, 7] as const
+
+export interface HabitoRegistro {
+  id: string
+  habito_id: string
+  fecha: string
+  created_at: string
+}
+
+export interface MotoInfo {
+  id: number
+  nombre: string
+  marca: string
+  modelo: string
+  anio: number
+  kilometrajeActual: number
+  imagenUrl?: string
+  ultimoCambioAceite?: number
+  fechaUltimoCambioAceite?: string
+  notas?: string
+  created_at: string
+}
+
+export interface MantenimientoMoto {
+  id: string
+  tipo: string
+  fecha: string
+  kilometraje: number
+  costo: number
+  notas?: string
+  created_at: string
+}
+
+export interface GastoMoto {
+  id: string
+  categoria: string
+  descripcion: string
+  valor: number
+  fecha: string
+  created_at: string
+}
+
 export interface Transferencia {
   id: string
   desde: string
@@ -79,6 +130,18 @@ export interface Store {
 
   tareas: Tarea[]
   setTareas: (t: Tarea[]) => void
+
+  habitos: Habito[]
+  setHabitos: (h: Habito[]) => void
+  registrosHabitos: HabitoRegistro[]
+  setRegistrosHabitos: (r: HabitoRegistro[]) => void
+
+  moto: MotoInfo | null
+  setMoto: (m: MotoInfo | null) => void
+  mantenimientosMoto: MantenimientoMoto[]
+  setMantenimientosMoto: (m: MantenimientoMoto[]) => void
+  gastosMoto: GastoMoto[]
+  setGastosMoto: (g: GastoMoto[]) => void
 }
 
 export function useLS<T>(

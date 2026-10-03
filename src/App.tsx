@@ -18,6 +18,11 @@ import {
   Store,
   signed,
   Tarea,
+  Habito,
+  HabitoRegistro,
+  MotoInfo,
+  MantenimientoMoto,
+  GastoMoto,
   Transferencia,
   Meta,
 } from './lib'
@@ -29,6 +34,8 @@ import {
   Config,
   Dashboard,
   Tareas,
+  Habitos,
+  MotoPage,
   Metas,
   MovModal,
   Movimientos,
@@ -49,6 +56,10 @@ import { getTransferencias } from './services/transferencias'
 import { getMetas } from './services/metas'
 
 import { getTareas } from './services/tareas'
+import { getHabitos, getRegistrosHabitos } from './services/habitos'
+import { getMoto } from './services/moto'
+import { getMantenimientosMoto } from './services/mantenimientosMoto'
+import { getGastosMoto } from './services/gastosMoto'
 
 const NAV = {
   finanzas: [
@@ -301,6 +312,65 @@ export default function App() {
     loadTareas()
   }, [])
 
+  // HÁBITOS
+  const [habitos, setHabitos] = useState<Habito[]>([])
+  const [registrosHabitos, setRegistrosHabitos] =
+    useState<HabitoRegistro[]>([])
+
+  useEffect(() => {
+    const loadHabitos = async () => {
+      try {
+        const [habitosData, registrosData] = await Promise.all([
+          getHabitos(),
+          getRegistrosHabitos(),
+        ])
+        setHabitos(habitosData)
+        setRegistrosHabitos(registrosData)
+      } catch (error) {
+        console.error('ERROR CARGANDO HÁBITOS:', error)
+        setAlert({
+          title: 'Error',
+          message: 'No se pudieron cargar los hábitos desde Supabase.',
+          variant: 'danger',
+          confirmText: 'Entendido',
+        })
+      }
+    }
+
+    loadHabitos()
+  }, [])
+
+  // MOTO
+  const [moto, setMoto] = useState<MotoInfo | null>(null)
+  const [mantenimientosMoto, setMantenimientosMoto] =
+    useState<MantenimientoMoto[]>([])
+  const [gastosMoto, setGastosMoto] = useState<GastoMoto[]>([])
+
+  useEffect(() => {
+    const loadMoto = async () => {
+      try {
+        const [motoData, mantenimientosData, gastosData] = await Promise.all([
+          getMoto(),
+          getMantenimientosMoto(),
+          getGastosMoto(),
+        ])
+        setMoto(motoData)
+        setMantenimientosMoto(mantenimientosData)
+        setGastosMoto(gastosData)
+      } catch (error) {
+        console.error('ERROR CARGANDO MÓDULO MOTO:', error)
+        setAlert({
+          title: 'Error',
+          message: 'No se pudo cargar la información de la moto desde Supabase.',
+          variant: 'danger',
+          confirmText: 'Entendido',
+        })
+      }
+    }
+
+    loadMoto()
+  }, [])
+
   // ─────────────────────────────────────
   // SALDO DE CARTERA
   // ─────────────────────────────────────
@@ -350,6 +420,18 @@ export default function App() {
 
     tareas,
     setTareas,
+
+    habitos,
+    setHabitos,
+    registrosHabitos,
+    setRegistrosHabitos,
+
+    moto,
+    setMoto,
+    mantenimientosMoto,
+    setMantenimientosMoto,
+    gastosMoto,
+    setGastosMoto,
 
     transfers,
     setTransfers,
@@ -626,12 +708,14 @@ export default function App() {
 
       {/* Main */}
       <main className="mx-auto max-w-5xl p-4 pb-28 md:p-8">
-        {page === 'dash' && <Dashboard s={s} />}
+        {page === 'dash' && <Dashboard s={s} onNavigate={setPage} />}
         {page === 'movs' && <Movimientos s={s} />}
         {page === 'carts' && <Carteras s={s} />}
         {page === 'metas' && <Metas s={s} />}
         {page === 'analisis' && <Analisis s={s} />}
         {page === 'tareas' && <Tareas s={s} />}
+        {page === 'habitos' && <Habitos s={s} />}
+        {page === 'moto' && <MotoPage s={s} />}
         {page === 'config' && <Config s={s} />}
       </main>
 
