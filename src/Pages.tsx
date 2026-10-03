@@ -17,6 +17,8 @@ import {
   Check,
   Eye,
   EyeOff,
+  CheckCircle2,
+  Circle,
   Info,
   Pencil,
   Plus,
@@ -24,6 +26,7 @@ import {
   Target,
   Trash2,
   X,
+  CheckSquare,
 } from 'lucide-react'
 import {
   AlertOptions,
@@ -31,6 +34,7 @@ import {
   Meta,
   Mov,
   Store,
+  Tarea,
   Tipo,
   Transferencia,
   daysAgo,
@@ -65,6 +69,12 @@ import {
   updateMeta,
   deleteMeta,
 } from './services/metas'
+import {
+  getTareas,
+  createTarea,
+  updateTarea,
+  deleteTarea,
+} from './services/tareas'
 
 const COLORS = [
   '#70d6a5',
@@ -563,8 +573,8 @@ const sorted = (ms: Mov[]) =>
 export function Dashboard({ s }: { s: Store }) {
   const [hide, setHide] = useState(false)
 
-
-  const hora = new Date().getHours()
+  const now = new Date()
+  const hora = now.getHours()
 
   const saludo =
     hora < 12
@@ -572,144 +582,251 @@ export function Dashboard({ s }: { s: Store }) {
       : hora < 19
         ? 'Buenas tardes'
         : 'Buenas noches'
+
+  const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1)
+  const inicioMesSiguiente = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+
+  const movimientosMes = s.movs.filter(m => {
+    const fecha = new Date(m.fecha)
+    return fecha >= inicioMes && fecha < inicioMesSiguiente
+  })
+
+  const ingresosMes = sum(movimientosMes, 'ingreso')
+  const gastosMes = sum(movimientosMes, 'gasto')
+  const balanceMes = ingresosMes - gastosMes
+
   const total = s.carts
     .filter(c => c.incluirEnTotal)
     .reduce((a, c) => a + s.saldo(c.id), 0)
 
+  const pendientes = s.tareas.filter(t => !t.completada)
+  const completadas = s.tareas.filter(t => t.completada)
+
   const mask = (n: number) => (hide ? '$ ••••••' : money(n))
 
-  return (
-    <div className="space-y-6">
+  const fechaActual = new Intl.DateTimeFormat('es-CO', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(now)
 
-      {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
+  return (
+    <div className="space-y-6 md:space-y-8">
+      {/* Encabezado */}
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <p className="text-xs font-medium uppercase tracking-[0.18em] text-brand/75">
+            {fechaActual}
+          </p>
+
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">
             {saludo}, Joseph
           </h1>
 
           <p className="mt-1 text-sm text-mute">
-            Este es el resumen de tus finanzas.
+            Tu espacio financiero, de un vistazo.
           </p>
         </div>
 
         <button
-          className={btn}
+          className={`${btn} w-full justify-center sm:w-auto`}
           onClick={() => s.openMov()}
         >
           <Plus size={16} />
           Nuevo movimiento
         </button>
-      </div>
+      </header>
 
-      {/* Balance */}
-      <Card
-        className="
-          bg-gradient-to-br
-          from-brand/[0.07]
-          via-white/[0.025]
-          to-transparent
-        "
-      >
-        <div className="pointer-events-none absolute -right-24 -top-24 h-48 w-48 rounded-full bg-brand/[0.06] blur-3xl" />
+      {/* Balance principal */}
+      
+      <Card className="relative isolate overflow-hidden !p-5 sm:!p-7" >
+        
+        <div className="pointer-events-none absolute -right-20 -top-24 -z-10 h-64 w-64 rounded-full bg-brand/[0.12] blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 left-1/3 -z-10 h-56 w-56 rounded-full bg-emerald-300/[0.05] blur-3xl" />
+        
+
 
         <div className="relative">
-          <div className="flex items-center gap-2 text-sm text-mute">
-            Balance total
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm text-mute">Balance total</p>
+              <p className="mt-1 text-xs text-mute/70">
+                Carteras incluidas en tu balance
+              </p>
+            </div>
 
-            <IconBtn onClick={() => setHide(!hide)}>
+            <IconBtn onClick={() => setHide(value => !value)}>
               {hide ? <EyeOff size={16} /> : <Eye size={16} />}
             </IconBtn>
           </div>
 
-          <p className="mt-1 text-4xl font-semibold tracking-tight text-brand">
+          <p className="mt-5 break-words text-4xl font-semibold tracking-tight text-brand sm:text-5xl">
             {mask(total)}
           </p>
 
-          <div className="mt-6 grid grid-cols-2 gap-4">
-            <div className="rounded-xl border border-white/[0.04] bg-white/[0.02] p-3">
-              <p className="text-xs text-mute">Ingresos</p>
-
-              <p className="mt-1 text-lg font-semibold text-brand">
-                {mask(sum(s.movs, 'ingreso'))}
+          <div className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-white/[0.06] bg-black/[0.12] p-4">
+              <p className="text-xs text-mute">Ingresos este mes</p>
+              <p className="mt-2 text-lg font-semibold tracking-tight text-brand">
+                {mask(ingresosMes)}
               </p>
             </div>
 
-            <div className="rounded-xl border border-white/[0.04] bg-white/[0.02] p-3">
-              <p className="text-xs text-mute">Gastos</p>
+            <div className="rounded-2xl border border-white/[0.06] bg-black/[0.12] p-4">
+              <p className="text-xs text-mute">Gastos este mes</p>
+              <p className="mt-2 text-lg font-semibold tracking-tight text-neg">
+                {mask(gastosMes)}
+              </p>
+            </div>
 
-              <p className="mt-1 text-lg font-semibold text-neg">
-                {mask(sum(s.movs, 'gasto'))}
+            <div className="rounded-2xl border border-white/[0.06] bg-black/[0.12] p-4">
+              <p className="text-xs text-mute">Balance del mes</p>
+              <p
+                className={`mt-2 text-lg font-semibold tracking-tight ${balanceMes >= 0 ? 'text-brand' : 'text-neg'
+                  }`}
+              >
+                {mask(balanceMes)}
               </p>
             </div>
           </div>
         </div>
       </Card>
 
-      {/* Wallets */}
-      <div>
-        <h2 className="mb-3 text-lg font-semibold tracking-tight">
-          Carteras
-        </h2>
-
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          {s.carts.map(c => (
-            <Card
-              key={c.id}
-              className="
-                !p-4
-                hover:-translate-y-0.5
-                hover:bg-white/[0.035]
-              "
-            >
-              <p className="text-xs text-mute">
-                {c.nombre}
-                {!c.incluirEnTotal && ' · fuera del total'}
-              </p>
-
-              <p className="mt-1 font-semibold tracking-tight">
-                {mask(s.saldo(c.id))}
-              </p>
-
-              {c.incluirEnTotal && (
-                <div className="mt-3 flex items-center gap-1.5 text-[10px] text-brand/70">
-                  <span className="h-1.5 w-1.5 rounded-full bg-brand" />
-                  Incluida en total
-                </div>
-              )}
-            </Card>
-          ))}
+      {/* Carteras */}
+      <section>
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Carteras</h2>
+            <p className="mt-1 text-xs text-mute">
+              {s.carts.length} {s.carts.length === 1 ? 'cartera' : 'carteras'}
+            </p>
+          </div>
         </div>
-      </div>
 
-      {/* Recent movements + chart */}
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <h2 className="mb-3 text-lg font-semibold tracking-tight">
-            Últimos movimientos
-          </h2>
+        {s.carts.length ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {s.carts.map(c => (
+              <Card
+                key={c.id}
+                className="!p-4 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/[0.035]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{c.nombre}</p>
+                    <p className="mt-1 text-xs text-mute">
+                      {c.incluirEnTotal
+                        ? 'Incluida en el balance'
+                        : 'Fuera del balance total'}
+                    </p>
+                  </div>
+
+                  <span
+                    className={`mt-1 h-2 w-2 shrink-0 rounded-full ${c.incluirEnTotal ? 'bg-brand' : 'bg-white/20'
+                      }`}
+                  />
+                </div>
+
+                <p className="mt-5 break-words text-lg font-semibold tracking-tight">
+                  {mask(s.saldo(c.id))}
+                </p>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card>
+            <Empty t="Todavía no tienes carteras." />
+          </Card>
+        )}
+      </section>
+
+      {/* Tareas */}
+      <Card className="!p-5 sm:!p-6">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">Tareas</h2>
+            <p className="mt-1 text-xs text-mute">
+              Un vistazo rápido a tus pendientes
+            </p>
+          </div>
+
+          <CheckSquare size={19} className="text-brand" />
+        </div>
+
+        <div className="mb-4 grid grid-cols-2 gap-3">
+          <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+            <p className="text-xs text-mute">Pendientes</p>
+            <p className="mt-1 text-xl font-semibold">{pendientes.length}</p>
+          </div>
+
+          <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+            <p className="text-xs text-mute">Completadas</p>
+            <p className="mt-1 text-xl font-semibold text-brand">
+              {completadas.length}
+            </p>
+          </div>
+        </div>
+
+        {pendientes.length ? (
+          <div className="space-y-2">
+            {pendientes.slice(0, 4).map(t => (
+              <div
+                key={t.id}
+                className="flex items-center gap-3 rounded-xl border border-white/[0.05] bg-white/[0.02] px-3 py-3"
+              >
+                <span className="h-2 w-2 shrink-0 rounded-full bg-brand/80" />
+                <p className="min-w-0 flex-1 truncate text-sm">{t.titulo}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="rounded-xl border border-white/[0.05] bg-white/[0.02] px-3 py-4 text-sm text-mute">
+            No tienes tareas pendientes.
+          </p>
+        )}
+      </Card>
+
+      {/* Actividad reciente y categorías */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="!p-5 sm:!p-6">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight">
+                Actividad reciente
+              </h2>
+              <p className="mt-1 text-xs text-mute">
+                Tus últimos movimientos registrados
+              </p>
+            </div>
+          </div>
 
           {s.movs.length ? (
-            sorted(s.movs)
-              .slice(0, 5)
-              .map(m => (
-                <MovRow
-                  key={m.id}
-                  m={m}
-                  s={s}
-                />
-              ))
+            <div className="space-y-1">
+              {sorted(s.movs)
+                .slice(0, 5)
+                .map(m => (
+                  <MovRow key={m.id} m={m} s={s} />
+                ))}
+            </div>
           ) : (
-            <Empty t="Sin movimientos. Registra el primero." />
+            <Empty t="Sin movimientos todavía. Registra el primero." />
           )}
         </Card>
 
-        <Card>
-          <h2 className="mb-4 text-lg font-semibold tracking-tight">
-            Gastos por categoría
-          </h2>
+        <Card className="!p-5 sm:!p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold tracking-tight">
+              Gastos por categoría
+            </h2>
+            <p className="mt-1 text-xs text-mute">
+              Distribución de tus gastos registrados
+            </p>
+          </div>
 
-          <CatChart ms={s.movs} />
+          {s.movs.some(m => m.tipo === 'gasto') ? (
+            <CatChart ms={s.movs} />
+          ) : (
+            <Empty t="Aún no hay gastos para mostrar." />
+          )}
         </Card>
       </div>
     </div>
@@ -2974,5 +3091,631 @@ export function Config({ s }: { s: Store }) {
         </button>
       </Card>
     </div>
+  )
+
+
+}
+
+export function Tareas({ s }: { s: Store }) {
+  const [titulo, setTitulo] = useState('')
+  const [descripcion, setDescripcion] = useState('')
+  const [fecha, setFecha] = useState('')
+  const [prioridad, setPrioridad] =
+    useState<Tarea['prioridad']>('media')
+
+  const [showForm, setShowForm] = useState(false)
+
+  const pendientes = s.tareas.filter(
+    tarea => !tarea.completada
+  )
+
+  const completadas = s.tareas.filter(
+    tarea => tarea.completada
+  )
+
+  const guardar = async () => {
+    if (!titulo.trim()) {
+      s.showAlert({
+        title: 'Falta el título',
+        message: 'Escribe un título para la tarea.',
+        variant: 'warning',
+        confirmText: 'Entendido',
+      })
+      return
+    }
+
+    try {
+      const nueva = await createTarea({
+        titulo,
+        descripcion,
+        fecha: fecha || undefined,
+        completada: false,
+        prioridad,
+      })
+
+      s.setTareas([
+        nueva,
+        ...s.tareas,
+      ])
+
+      setTitulo('')
+      setDescripcion('')
+      setFecha('')
+      setPrioridad('media')
+      setShowForm(false)
+    } catch (error) {
+      console.error('ERROR GUARDANDO TAREA:', error)
+
+      s.showAlert({
+        title: 'Error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'No se pudo guardar la tarea en Supabase.',
+        variant: 'danger',
+        confirmText: 'Entendido',
+      })
+    }
+  }
+
+  const cambiarEstado = async (tarea: Tarea) => {
+    try {
+      const actualizada = await updateTarea({
+        ...tarea,
+        completada: !tarea.completada,
+      })
+
+      s.setTareas(
+        s.tareas.map(t =>
+          t.id === actualizada.id
+            ? actualizada
+            : t
+        )
+      )
+    } catch (error) {
+      console.error('ERROR ACTUALIZANDO TAREA:', error)
+
+      s.showAlert({
+        title: 'Error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'No se pudo actualizar la tarea.',
+        variant: 'danger',
+        confirmText: 'Entendido',
+      })
+    }
+  }
+
+  const eliminar = (tarea: Tarea) => {
+    s.showAlert({
+      title: 'Eliminar tarea',
+      message: `¿Seguro que quieres eliminar "${tarea.titulo}"?`,
+      variant: 'warning',
+      confirmText: 'Eliminar',
+      cancelText: 'Cancelar',
+      onConfirm: async () => {
+        try {
+          await deleteTarea(tarea.id)
+
+          s.setTareas(
+            s.tareas.filter(t =>
+              t.id !== tarea.id
+            )
+          )
+        } catch (error) {
+          console.error(
+            'ERROR ELIMINANDO TAREA:',
+            error
+          )
+
+          s.showAlert({
+            title: 'Error',
+            message:
+              error instanceof Error
+                ? error.message
+                : 'No se pudo eliminar la tarea.',
+            variant: 'danger',
+            confirmText: 'Entendido',
+          })
+        }
+      },
+    })
+  }
+
+  const prioridadStyle = {
+    baja: 'bg-[#7bb6ff]/[0.08] text-[#7bb6ff]',
+    media: 'bg-[#ffd27b]/[0.08] text-[#ffd27b]',
+    alta: 'bg-neg/[0.08] text-neg',
+  }
+
+  const prioridadLabel = {
+    baja: 'Baja',
+    media: 'Media',
+    alta: 'Alta',
+  }
+
+  const formatearFecha = (fecha: string) => {
+    const [year, month, day] =
+      fecha.split('-')
+
+    if (!year || !month || !day) {
+      return fecha
+    }
+
+    return `${day}/${month}/${year}`
+  }
+
+  return (
+    <section className="space-y-6">
+
+      <Title>
+        <div>
+          <h1 className="text-2xl font-semibold">
+            Tareas
+          </h1>
+
+          <p className="mt-1 text-sm text-mute">
+            Organiza tus pendientes
+          </p>
+        </div>
+      </Title>
+
+      {/* Resumen */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+
+        <Card>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-mute">
+                Pendientes
+              </p>
+
+              <p className="mt-1 text-2xl font-semibold">
+                {pendientes.length}
+              </p>
+            </div>
+
+            <div className="
+              flex h-10 w-10
+              items-center justify-center
+              rounded-xl
+              bg-brand/[0.08]
+              text-brand
+            ">
+              <Circle size={20} />
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-mute">
+                Completadas
+              </p>
+
+              <p className="mt-1 text-2xl font-semibold">
+                {completadas.length}
+              </p>
+            </div>
+
+            <div className="
+              flex h-10 w-10
+              items-center justify-center
+              rounded-xl
+              bg-brand/[0.08]
+              text-brand
+            ">
+              <CheckCircle2 size={20} />
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-mute">
+                Total
+              </p>
+
+              <p className="mt-1 text-2xl font-semibold">
+                {s.tareas.length}
+              </p>
+            </div>
+
+            <div className="
+              flex h-10 w-10
+              items-center justify-center
+              rounded-xl
+              bg-white/[0.05]
+              text-mute
+            ">
+              <CheckSquare size={20} />
+            </div>
+          </div>
+        </Card>
+
+      </div>
+
+      {/* Botón nueva tarea */}
+      {!showForm && (
+        <button
+          onClick={() => setShowForm(true)}
+          className={btn}
+        >
+          <Plus size={18} />
+          Nueva tarea
+        </button>
+      )}
+
+      {/* Formulario */}
+      {showForm && (
+        <Card>
+          <div className="space-y-5">
+
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold">
+                  Nueva tarea
+                </h2>
+
+                <p className="mt-1 text-sm text-mute">
+                  Agrega los detalles de tu pendiente.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowForm(false)}
+                className="text-mute hover:text-ink"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+
+              <Field label="Título">
+                <input
+                  value={titulo}
+                  onChange={e =>
+                    setTitulo(e.target.value)
+                  }
+                  placeholder="Ej. Estudiar para el examen"
+                  className={inp}
+                  autoFocus
+                />
+              </Field>
+
+              <Field label="Descripción">
+                <textarea
+                  value={descripcion}
+                  onChange={e =>
+                    setDescripcion(e.target.value)
+                  }
+                  placeholder="Agrega una descripción opcional..."
+                  className={`${inp} min-h-[100px] resize-none`}
+                />
+              </Field>
+
+              <div className="
+                grid grid-cols-1
+                gap-4
+                sm:grid-cols-2
+              ">
+
+                <Field label="Fecha">
+                  <input
+                    type="date"
+                    value={fecha}
+                    onChange={e =>
+                      setFecha(e.target.value)
+                    }
+                    className={inp}
+                  />
+                </Field>
+
+                <Field label="Prioridad">
+                  <select
+                    value={prioridad}
+                    onChange={e =>
+                      setPrioridad(
+                        e.target.value as Tarea['prioridad']
+                      )
+                    }
+                    className={inp}
+                  >
+                    <option value="baja">
+                      Baja
+                    </option>
+
+                    <option value="media">
+                      Media
+                    </option>
+
+                    <option value="alta">
+                      Alta
+                    </option>
+                  </select>
+                </Field>
+
+              </div>
+
+            </div>
+
+            <div className="
+              flex justify-end
+              gap-2
+              border-t border-white/[0.06]
+              pt-4
+            ">
+              <button
+                onClick={() => setShowForm(false)}
+                className="
+                  rounded-xl
+                  px-4 py-2.5
+                  text-sm
+                  text-mute
+                  transition
+                  hover:bg-white/[0.04]
+                  hover:text-ink
+                "
+              >
+                Cancelar
+              </button>
+
+              <button
+                onClick={guardar}
+                className={btn}
+              >
+                <Check size={17} />
+                Guardar tarea
+              </button>
+            </div>
+
+          </div>
+        </Card>
+      )}
+
+      {/* Pendientes */}
+      <div className="space-y-3">
+
+        <div className="
+          flex items-center
+          justify-between
+        ">
+          <div>
+            <h2 className="font-semibold">
+              Pendientes
+            </h2>
+
+            <p className="mt-1 text-sm text-mute">
+              {pendientes.length === 0
+                ? 'No tienes tareas pendientes'
+                : `${pendientes.length} ${pendientes.length === 1
+                  ? 'tarea pendiente'
+                  : 'tareas pendientes'
+                }`
+              }
+            </p>
+          </div>
+        </div>
+
+        {pendientes.length === 0 ? (
+          <Empty t="No tienes tareas pendientes." />
+        ) : (
+          <div className="space-y-3">
+
+            {pendientes.map(tarea => (
+              <Card key={tarea.id}>
+
+                <div className="
+                  flex
+                  items-start
+                  gap-3
+                ">
+
+                  <button
+                    onClick={() =>
+                      cambiarEstado(tarea)
+                    }
+                    className="
+                      mt-0.5
+                      shrink-0
+                      text-mute
+                      transition
+                      hover:text-brand
+                    "
+                    title="Marcar como completada"
+                  >
+                    <Circle size={22} />
+                  </button>
+
+                  <div className="min-w-0 flex-1">
+
+                    <div className="
+                      flex
+                      flex-wrap
+                      items-start
+                      justify-between
+                      gap-2
+                    ">
+
+                      <p className="
+                        font-medium
+                        text-ink
+                        break-words
+                      ">
+                        {tarea.titulo}
+                      </p>
+
+                      <span className={`
+                        rounded-full
+                        px-2.5 py-1
+                        text-xs
+                        font-medium
+                        ${prioridadStyle[tarea.prioridad]}
+                      `}>
+                        {prioridadLabel[tarea.prioridad]}
+                      </span>
+
+                    </div>
+
+                    {tarea.descripcion && (
+                      <p className="
+                        mt-1.5
+                        text-sm
+                        leading-relaxed
+                        text-mute
+                      ">
+                        {tarea.descripcion}
+                      </p>
+                    )}
+
+                    {tarea.fecha && (
+                      <div className="
+                        mt-3
+                        flex
+                        items-center
+                        gap-2
+                        text-xs
+                        text-mute
+                      ">
+                        <span>
+                          📅
+                        </span>
+
+                        <span>
+                          {formatearFecha(tarea.fecha)}
+                        </span>
+                      </div>
+                    )}
+
+                  </div>
+
+                  <button
+                    onClick={() =>
+                      eliminar(tarea)
+                    }
+                    className="
+                      shrink-0
+                      rounded-lg
+                      p-1.5
+                      text-mute
+                      transition
+                      hover:bg-neg/[0.08]
+                      hover:text-neg
+                    "
+                    title="Eliminar tarea"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+
+                </div>
+
+              </Card>
+            ))}
+
+          </div>
+        )}
+
+      </div>
+
+      {/* Completadas */}
+      {completadas.length > 0 && (
+        <div className="space-y-3">
+
+          <div>
+            <h2 className="font-semibold">
+              Completadas
+            </h2>
+
+            <p className="mt-1 text-sm text-mute">
+              {completadas.length} {
+                completadas.length === 1
+                  ? 'tarea completada'
+                  : 'tareas completadas'
+              }
+            </p>
+          </div>
+
+          <div className="space-y-3">
+
+            {completadas.map(tarea => (
+              <Card key={tarea.id}>
+
+                <div className="
+                  flex
+                  items-center
+                  gap-3
+                ">
+
+                  <button
+                    onClick={() =>
+                      cambiarEstado(tarea)
+                    }
+                    className="
+                      shrink-0
+                      text-brand
+                      transition
+                      hover:opacity-70
+                    "
+                    title="Marcar como pendiente"
+                  >
+                    <CheckCircle2 size={22} />
+                  </button>
+
+                  <div className="min-w-0 flex-1">
+
+                    <p className="
+                      text-sm
+                      text-mute
+                      line-through
+                      break-words
+                    ">
+                      {tarea.titulo}
+                    </p>
+
+                    {tarea.fecha && (
+                      <p className="
+                        mt-1
+                        text-xs
+                        text-mute/60
+                      ">
+                        {formatearFecha(tarea.fecha)}
+                      </p>
+                    )}
+
+                  </div>
+
+                  <button
+                    onClick={() =>
+                      eliminar(tarea)
+                    }
+                    className="
+                      shrink-0
+                      rounded-lg
+                      p-1.5
+                      text-mute
+                      transition
+                      hover:bg-neg/[0.08]
+                      hover:text-neg
+                    "
+                    title="Eliminar tarea"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+
+                </div>
+
+              </Card>
+            ))}
+
+          </div>
+
+        </div>
+      )}
+
+    </section>
   )
 }

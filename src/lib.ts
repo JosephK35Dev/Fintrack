@@ -27,6 +27,16 @@ export interface Meta {
   carteras: string[]
 }
 
+export interface Tarea {
+  id: string
+  titulo: string
+  descripcion?: string
+  fecha?: string
+  completada: boolean
+  prioridad: 'baja' | 'media' | 'alta'
+  created_at: string
+}
+
 export interface Transferencia {
   id: string
   desde: string
@@ -66,6 +76,9 @@ export interface Store {
   openMov: (m?: Mov) => void
 
   showAlert: (options: AlertOptions) => void
+
+  tareas: Tarea[]
+  setTareas: (t: Tarea[]) => void
 }
 
 export function useLS<T>(
