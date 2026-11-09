@@ -13,6 +13,7 @@ import {
 } from 'recharts'
 import {
   AlertTriangle,
+  Inbox,
   ArrowLeftRight,
   Check,
   Eye,
@@ -122,43 +123,61 @@ const COLORS = [
 ]
 
 const inp = `
-  w-full rounded-xl
-  border border-white/[0.07]
-  bg-white/[0.025]
-  px-3 py-2.5
+  w-full min-h-[42px] rounded-xl
+  border border-white/[0.09]
+  bg-white/[0.035]
+  px-3.5 py-2.5
   text-sm text-ink
   outline-none
-  backdrop-blur-md
   transition-all duration-200
   placeholder:text-mute/50
-  hover:border-white/[0.11]
-  focus:border-brand/40
-  focus:bg-white/[0.035]
-  focus:ring-2
-  focus:ring-brand/[0.06]
+  hover:border-white/[0.15]
+  focus:border-brand/50
+  focus:bg-white/[0.05]
+  focus:ring-4
+  focus:ring-brand/[0.09]
+  disabled:cursor-not-allowed disabled:opacity-50
 `
 
 const btn = `
-  inline-flex items-center gap-2
-  rounded-xl
+  inline-flex items-center gap-2 whitespace-nowrap
+  min-h-[42px] rounded-xl
   bg-brand
   px-4 py-2.5
-  text-sm font-medium text-bg
-  shadow-[0_0_20px_rgba(112,214,165,0.10)]
+  text-sm font-semibold text-bg
+  shadow-[0_1px_0_rgba(255,255,255,0.25)_inset,0_8px_24px_-8px_rgba(112,214,165,0.45)]
   transition-all duration-200
-  hover:bg-[#7be0ad]
-  hover:shadow-[0_0_24px_rgba(112,214,165,0.16)]
+  hover:bg-[#82e0b3]
+  hover:shadow-[0_1px_0_rgba(255,255,255,0.3)_inset,0_10px_28px_-8px_rgba(112,214,165,0.55)]
+  active:scale-[0.98]
+  disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:hover:bg-brand
+`
+
+const btnGhost = `
+  inline-flex items-center justify-center gap-2 whitespace-nowrap
+  min-h-[42px] rounded-xl
+  border border-white/[0.09]
+  bg-white/[0.03]
+  px-4 py-2.5
+  text-sm font-medium text-mute
+  transition-all duration-200
+  hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-ink
   active:scale-[0.98]
 `
 
 const tip = {
   contentStyle: {
-    background: 'rgba(17, 22, 25, 0.92)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 14,
+    background: 'rgba(16, 21, 24, 0.95)',
+    border: '1px solid rgba(255,255,255,0.09)',
+    borderRadius: 12,
     color: '#f4f6f5',
+    fontSize: 12,
+    padding: '8px 12px',
+    boxShadow: '0 12px 40px rgba(0,0,0,0.45)',
     backdropFilter: 'blur(14px)',
   },
+  labelStyle: { color: '#8f9a95', marginBottom: 4, fontSize: 11 },
+  itemStyle: { color: '#f4f6f5', padding: 0 },
   formatter: (v: unknown) => money(Number(v)),
 }
 
@@ -173,13 +192,13 @@ const Card = ({
     className={`
       relative overflow-hidden
       rounded-2xl
-      border border-white/[0.065]
-      bg-white/[0.025]
+      border border-white/[0.07]
+      bg-surface/70
       p-5
-      shadow-[0_8px_30px_rgba(0,0,0,0.12)]
+      shadow-[0_1px_0_rgba(255,255,255,0.04)_inset,0_10px_30px_-12px_rgba(0,0,0,0.5)]
       backdrop-blur-xl
       transition-all duration-200
-      hover:border-white/[0.09]
+      hover:border-white/[0.11]
       ${className}
     `}
   >
@@ -194,30 +213,43 @@ const Title = ({
   children: ReactNode
   right?: ReactNode
 }) => (
-  <div className="mb-5 flex items-center justify-between gap-3">
-    <h2 className="text-xl font-semibold tracking-tight">{children}</h2>
+  <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+    <h2 className="min-w-0 text-2xl font-semibold tracking-tight md:text-[28px]">
+      {children}
+    </h2>
     {right}
   </div>
 )
 
-const Empty = ({ t }: { t: string }) => (
-  <p className="py-8 text-center text-sm text-mute">{t}</p>
+const Empty = ({ t, icon }: { t: string; icon?: ReactNode }) => (
+  <div className="flex flex-col items-center gap-3 py-10 text-center">
+    <span className="grid h-11 w-11 place-items-center rounded-2xl border border-white/[0.07] bg-white/[0.03] text-mute/70">
+      {icon ?? <Inbox size={20} strokeWidth={1.6} />}
+    </span>
+    <p className="max-w-xs text-sm leading-relaxed text-mute">{t}</p>
+  </div>
 )
 
 const IconBtn = ({
   onClick,
   children,
+  label,
 }: {
   onClick: () => void
   children: ReactNode
+  label?: string
 }) => (
   <button
+    type="button"
     onClick={onClick}
+    aria-label={label}
+    title={label}
     className="
-      rounded-lg p-2
+      grid h-9 w-9 place-items-center
+      rounded-lg
       text-mute
       transition-all duration-200
-      hover:bg-white/[0.05]
+      hover:bg-white/[0.07]
       hover:text-ink
       active:scale-95
     "
@@ -238,35 +270,36 @@ function Modal({
   return (
     <div
       className="
+        animate-fade
         fixed inset-0 z-50
-        grid place-items-center
-        bg-black/70
-        p-4
+        flex items-end justify-center
+        bg-black/70 p-0
         backdrop-blur-sm
+        sm:items-center sm:p-4
       "
       onClick={onClose}
     >
       <div
         className="
-          w-full max-w-md
-          overflow-hidden
-          rounded-2xl
-          border border-white/[0.08]
-          bg-[#111619]/95
-          p-5
-          shadow-[0_20px_80px_rgba(0,0,0,0.45)]
+          animate-pop
+          max-h-[92dvh] w-full max-w-md
+          overflow-y-auto
+          rounded-t-3xl border border-white/[0.09]
+          bg-surface/95
+          p-5 pb-6
+          shadow-[0_24px_90px_rgba(0,0,0,0.55)]
           backdrop-blur-2xl
+          sm:rounded-2xl sm:pb-5
         "
         onClick={e => e.stopPropagation()}
       >
-        <div className="mb-5 flex items-center justify-between">
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/[0.12] sm:hidden" />
+        <div className="mb-5 flex items-center justify-between gap-3">
           <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
-
-          <IconBtn onClick={onClose}>
+          <IconBtn onClick={onClose} label="Cerrar">
             <X size={18} />
           </IconBtn>
         </div>
-
         {children}
       </div>
     </div>
@@ -292,11 +325,11 @@ export function AlertModal({
       icon: <AlertTriangle size={22} />,
       iconClass: 'bg-[#ffd27b]/[0.08] text-[#ffd27b]',
       buttonClass: `
-        inline-flex items-center justify-center gap-2
+        inline-flex min-h-[42px] items-center justify-center gap-2
         rounded-xl
         bg-[#ffd27b]
         px-4 py-2.5
-        text-sm font-medium text-bg
+        text-sm font-semibold text-bg
         transition-all duration-200
         hover:bg-[#ffda91]
         active:scale-[0.98]
@@ -306,11 +339,11 @@ export function AlertModal({
       icon: <Trash2 size={21} />,
       iconClass: 'bg-neg/[0.08] text-neg',
       buttonClass: `
-        inline-flex items-center justify-center gap-2
+        inline-flex min-h-[42px] items-center justify-center gap-2
         rounded-xl
         bg-neg
         px-4 py-2.5
-        text-sm font-medium text-bg
+        text-sm font-semibold text-bg
         transition-all duration-200
         hover:bg-[#ff8b8b]
         active:scale-[0.98]
@@ -326,16 +359,17 @@ export function AlertModal({
   return (
     <div
       className="
+        animate-fade
         fixed inset-0 z-[60]
         grid place-items-center
-        bg-black/70
-        p-4
+        bg-black/75 p-4
         backdrop-blur-sm
       "
       onClick={onClose}
     >
       <div
         className="
+          animate-pop
           w-full max-w-sm
           overflow-hidden
           rounded-2xl
@@ -364,7 +398,6 @@ export function AlertModal({
             <h3 className="text-lg font-semibold tracking-tight">
               {alert.title}
             </h3>
-
             <p className="mt-2 text-sm leading-relaxed text-mute">
               {alert.message}
             </p>
@@ -378,24 +411,9 @@ export function AlertModal({
         <div className="mt-6 flex gap-2">
           {alert.onConfirm ? (
             <>
-              <button
-                className="
-                  flex-1
-                  rounded-xl
-                  border border-white/[0.07]
-                  bg-white/[0.025]
-                  px-4 py-2.5
-                  text-sm font-medium
-                  text-mute
-                  transition-all duration-200
-                  hover:bg-white/[0.05]
-                  hover:text-ink
-                "
-                onClick={onClose}
-              >
+              <button className={`${btnGhost} flex-1`} onClick={onClose}>
                 {alert.cancelText ?? 'Cancelar'}
               </button>
-
               <button
                 className={`${styles.buttonClass} flex-1`}
                 onClick={confirm}
@@ -425,7 +443,7 @@ const Field = ({
   children: ReactNode
 }) => (
   <label className="block text-xs text-mute">
-    <span className="mb-1.5 block">{label}</span>
+    <span className="mb-1.5 block font-medium tracking-wide">{label}</span>
     {children}
   </label>
 )
@@ -459,6 +477,8 @@ function CatChart({ ms }: { ms: Mov[] }) {
               dataKey="value"
               innerRadius={50}
               outerRadius={85}
+              paddingAngle={2}
+              cornerRadius={4}
               stroke="none"
             >
               {data.map((_, i) => (
@@ -995,6 +1015,9 @@ export function Movimientos({ s }: { s: Store }) {
   const [tipo, setTipo] = useState('')
   const [cat, setCat] = useState('')
   const [cart, setCart] = useState('')
+  const [modoFecha, setModoFecha] = useState<'ninguno' | 'dia' | 'rango'>('ninguno')
+  const [fechaDesde, setFechaDesde] = useState('')
+  const [fechaHasta, setFechaHasta] = useState('')
 
   const list = sorted(s.movs).filter(
     m =>
@@ -1004,8 +1027,18 @@ export function Movimientos({ s }: { s: Store }) {
       (!cart ||
         (cart === 'none'
           ? !m.cartera
-          : m.cartera === cart))
+          : m.cartera === cart)) &&
+      (modoFecha === 'ninguno' ||
+        (modoFecha === 'dia'
+          ? !!fechaDesde && m.fecha.slice(0, 10) === fechaDesde
+          : (!fechaDesde || m.fecha.slice(0, 10) >= fechaDesde) &&
+            (!fechaHasta || m.fecha.slice(0, 10) <= fechaHasta) &&
+            (!!fechaDesde || !!fechaHasta)))
   )
+
+  const ingresosFiltrados = sum(list, 'ingreso')
+  const gastosFiltrados = sum(list, 'gasto')
+  const balanceFiltrado = ingresosFiltrados - gastosFiltrados
 
   return (
     <div>
@@ -1026,7 +1059,7 @@ export function Movimientos({ s }: { s: Store }) {
       <div
         className="
     mb-4
-    grid grid-cols-2 gap-2 md:grid-cols-4
+    grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6
     rounded-2xl
     border border-white/[0.06]
     bg-white/[0.018]
@@ -1035,7 +1068,7 @@ export function Movimientos({ s }: { s: Store }) {
     backdrop-blur-xl
   "
       >
-        <div className="relative col-span-2 md:col-span-1">
+        <div className="relative col-span-2 md:col-span-1 xl:col-span-2">
           <Search
             size={16}
             className="absolute left-3 top-3 text-mute"
@@ -1088,6 +1121,53 @@ export function Movimientos({ s }: { s: Store }) {
             </option>
           ))}
         </select>
+
+        <select
+          className={inp}
+          aria-label="Filtrar por fecha"
+          value={modoFecha}
+          onChange={e => {
+            const nuevoModo = e.target.value as typeof modoFecha
+            setModoFecha(nuevoModo)
+            if (nuevoModo === 'ninguno') {
+              setFechaDesde('')
+              setFechaHasta('')
+            }
+          }}
+        >
+          <option value="ninguno">Todas las fechas</option>
+          <option value="dia">Un día</option>
+          <option value="rango">Rango de fechas</option>
+        </select>
+
+        {modoFecha === 'dia' && (
+          <input
+            className={inp}
+            type="date"
+            aria-label="Día de los movimientos"
+            value={fechaDesde}
+            onChange={e => setFechaDesde(e.target.value)}
+          />
+        )}
+
+        {modoFecha === 'rango' && (
+          <>
+            <input
+              className={inp}
+              type="date"
+              aria-label="Fecha inicial del rango"
+              value={fechaDesde}
+              onChange={e => setFechaDesde(e.target.value)}
+            />
+            <input
+              className={inp}
+              type="date"
+              aria-label="Fecha final del rango"
+              value={fechaHasta}
+              onChange={e => setFechaHasta(e.target.value)}
+            />
+          </>
+        )}
       </div>
 
       <Card className=" !p-2 bg-gradient-to-br from-white/[0.035] via-white/[0.02] to-transparent ">
@@ -1104,6 +1184,23 @@ export function Movimientos({ s }: { s: Store }) {
           <Empty t="No hay movimientos con esos filtros." />
         )}
       </Card>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-live="polite">
+        <Card className="!p-4">
+          <p className="text-xs text-mute">Ingresos{list.length !== s.movs.length ? ' filtrados' : ''}</p>
+          <p className="mt-2 text-lg font-semibold text-brand">{money(ingresosFiltrados)}</p>
+        </Card>
+        <Card className="!p-4">
+          <p className="text-xs text-mute">Egresos{list.length !== s.movs.length ? ' filtrados' : ''}</p>
+          <p className="mt-2 text-lg font-semibold text-neg">{money(gastosFiltrados)}</p>
+        </Card>
+        <Card className="!p-4">
+          <p className="text-xs text-mute">Balance{list.length !== s.movs.length ? ' filtrado' : ''}</p>
+          <p className={`mt-2 text-lg font-semibold ${balanceFiltrado >= 0 ? 'text-brand' : 'text-neg'}`}>
+            {money(balanceFiltrado)}
+          </p>
+        </Card>
+      </div>
     </div>
   )
 }
@@ -2743,7 +2840,8 @@ export function Analisis({ s }: { s: Store }) {
               <ResponsiveContainer>
                 <BarChart data={data}>
                   <CartesianGrid
-                    stroke="#ffffff10"
+                    stroke="#ffffff0d"
+                    strokeDasharray="3 6"
                     vertical={false}
                   />
 
@@ -2751,11 +2849,16 @@ export function Analisis({ s }: { s: Store }) {
                     dataKey="k"
                     stroke="#8b9691"
                     fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
                   />
 
                   <YAxis
                     stroke="#8b9691"
                     fontSize={12}
+                    tickLine={false}
+                    axisLine={false}
                     tickFormatter={v =>
                       `${v / 1000}k`
                     }
@@ -2771,13 +2874,15 @@ export function Analisis({ s }: { s: Store }) {
                   <Bar
                     dataKey="Ingresos"
                     fill="#70d6a5"
-                    radius={[4, 4, 0, 0]}
+                    radius={[6, 6, 0, 0]}
+                    maxBarSize={28}
                   />
 
                   <Bar
                     dataKey="Gastos"
                     fill="#ff7b7b"
-                    radius={[4, 4, 0, 0]}
+                    radius={[6, 6, 0, 0]}
+                    maxBarSize={28}
                   />
                 </BarChart>
               </ResponsiveContainer>
@@ -3248,17 +3353,10 @@ export function Tareas({ s }: { s: Store }) {
   return (
     <section className="space-y-6">
 
-      <Title>
-        <div>
-          <h1 className="text-2xl font-semibold">
-            Tareas
-          </h1>
-
-          <p className="mt-1 text-sm text-mute">
-            Organiza tus pendientes
-          </p>
-        </div>
-      </Title>
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight md:text-[28px]">Tareas</h1>
+        <p className="mt-1 text-sm text-mute">Organiza tus pendientes</p>
+      </header>
 
       {/* Resumen */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -3580,9 +3678,7 @@ export function Tareas({ s }: { s: Store }) {
                         text-xs
                         text-mute
                       ">
-                        <span>
-                          📅
-                        </span>
+                        <CalendarDays size={14} className="text-brand/70" />
 
                         <span>
                           {formatearFecha(tarea.fecha)}

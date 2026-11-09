@@ -1,95 +1,76 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #0a0d0f;
-  --color-surface: #111619;
+  --color-bg: #080b0d;
+  --color-surface: #101518;
   --color-hover: #151b1e;
   --color-brand: #70d6a5;
   --color-ink: #f4f6f5;
-  --color-mute: #8b9691;
+  --color-mute: #8f9a95;
   --color-neg: #ff7b7b;
 
-  --font-sans: "Inter", system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 html {
-  background: #0a0d0f;
+  background: #080b0d;
+  color-scheme: dark;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   min-width: 320px;
+  min-height: 100dvh;
   background:
-    radial-gradient(
-      circle at 10% 0%,
-      rgba(112, 214, 165, 0.07),
-      transparent 28%
-    ),
-    radial-gradient(
-      circle at 90% 15%,
-      rgba(90, 120, 255, 0.045),
-      transparent 24%
-    ),
-    #0a0d0f;
+    radial-gradient(circle at 8% -5%, rgba(112, 214, 165, 0.08), transparent 30%),
+    radial-gradient(circle at 95% 10%, rgba(90, 120, 255, 0.05), transparent 26%),
+    #080b0d;
+  background-attachment: fixed;
   color: #f4f6f5;
   font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-button,
-input,
-select {
-  font: inherit;
-}
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+input, select, textarea { color-scheme: dark; }
 
-input,
-select {
-  color-scheme: dark;
-}
+/* Cifras alineadas en montos y contadores */
+h1, h2, h3, p, span { font-variant-numeric: tabular-nums; }
 
-select option {
-  background: #111619;
-  color: #f4f6f5;
+/* Foco accesible solo con teclado */
+:focus-visible {
+  outline: 2px solid rgba(112, 214, 165, 0.55);
+  outline-offset: 2px;
 }
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; }
 
-select option:checked {
-  background: #1a2521;
-  color: #70d6a5;
-}
+select option { background: #101518; color: #f4f6f5; }
+select option:checked { background: #1a2521; color: #70d6a5; }
 
 /* Scrollbar */
-
-::-webkit-scrollbar {
-  width: 7px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.09);
   border-radius: 999px;
 }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.16); }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.14);
-}
-
-/* Efecto glass reutilizable */
+::selection { background: rgba(112, 214, 165, 0.25); color: #f4f6f5; }
 
 .glass {
-  background: rgba(17, 22, 25, 0.72);
+  background: rgba(16, 21, 24, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
-
-/* Glass un poco más transparente */
-
 .glass-soft {
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid rgba(255, 255, 255, 0.055);
@@ -97,9 +78,18 @@ select option:checked {
   -webkit-backdrop-filter: blur(16px);
 }
 
-/* Selección de texto */
+/* Animaciones de entrada (modales) */
+@keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98) }
+  to   { opacity: 1; transform: none }
+}
+.animate-fade { animation: fade-in 0.16s ease-out; }
+.animate-pop  { animation: pop-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
 
-::selection {
-  background: rgba(112, 214, 165, 0.25);
-  color: #f4f6f5;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
