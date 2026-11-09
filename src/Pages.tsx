@@ -1,4 +1,4 @@
-import { ReactNode, useRef, useState } from 'react'
+﻿import { ReactNode, useRef, useState } from 'react'
 import {
   Bar,
   BarChart,
@@ -613,11 +613,20 @@ export function Dashboard({
 }) {
   const [hide, setHide] = useState(false)
   const now = new Date()
-  const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1)
-  const inicioMesSiguiente = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  const hora = now.getHours()
+
+  const saludo =
+    hora < 12
+      ? 'Buenos días'
+      : hora < 19
+        ? 'Buenas tardes'
+        : 'Buenas noches'
+
+  // Las fechas de movimiento son fechas calendario (YYYY-MM-DD), no instantes.
+  // Compararlas como Date puede moverlas al día anterior por la zona horaria.
+  const fechaMes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const movimientosMes = s.movs.filter(m => {
-    const fecha = new Date(m.fecha)
-    return fecha >= inicioMes && fecha < inicioMesSiguiente
+    return m.fecha.slice(0, 7) === fechaMes
   })
   const ingresosMes = sum(movimientosMes, 'ingreso')
   const gastosMes = sum(movimientosMes, 'gasto')
@@ -638,9 +647,6 @@ export function Dashboard({
   const fechaActual = new Intl.DateTimeFormat('es-CO', {
     weekday: 'long', day: 'numeric', month: 'long',
   }).format(now)
-  const saludo = now.getHours() < 12
-    ? 'Buenos días'
-    : now.getHours() < 19 ? 'Buenas tardes' : 'Buenas noches'
   const fechaHoy = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-')
   const diaHoy = ((now.getDay() + 6) % 7) + 1
   const habitosActivos = s.habitos.filter(h => h.activo)
@@ -4810,3 +4816,4 @@ export function MotoPage({ s }: { s: Store }) {
     </section>
   )
 }
+
