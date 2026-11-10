@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useMediaQuery } from './hooks/useMediaQuery'
 import { supabase } from './supabase'
 import {
   LayoutDashboard,
@@ -10,6 +11,7 @@ import {
   Bike,
   CheckSquare,
   Brain,
+  Plus,
 } from 'lucide-react'
 
 import {
@@ -39,6 +41,8 @@ import {
   Metas,
   MovModal,
   Movimientos,
+  DashboardMobile,
+  TransferModal,
 } from './Pages'
 
 import { getCarteras } from './services/carteras'
@@ -51,7 +55,7 @@ import {
   updateMovimiento,
 } from './services/movimientos'
 
-import { getTransferencias } from './services/transferencias'
+import { createTransferencia, getTransferencias } from './services/transferencias'
 
 import { getMetas } from './services/metas'
 
@@ -107,6 +111,13 @@ const NAV = {
   ],
 } as const
 
+const TABS = [
+  { id: 'dash', label: 'Inicio' },
+  ...NAV.finanzas,
+  ...NAV.productividad,
+  ...NAV.personal,
+]
+
 export default function App() {
 
   const [showMore, setShowMore] =
@@ -115,6 +126,8 @@ export default function App() {
   const [showFinance, setShowFinance] =
     useState(false)
 
+  const isMobile = useMediaQuery('(max-width: 767px)')
+  const [transferModalOpen, setTransferModalOpen] = useState(false)
   const [page, setPage] =
     useState<string>('dash')
 
@@ -441,6 +454,8 @@ export default function App() {
     openMov: mov =>
       setModal({ mov }),
 
+    openTransfer: () => setTransferModalOpen(true),
+
     showAlert: options =>
       setAlert(options),
 
@@ -516,8 +531,23 @@ export default function App() {
     }
   }
 
+  const saveDashboardTransfer = async (t: Transferencia) => {
+    if (t.monto > s.saldo(t.desde)) {
+      setAlert({ title: 'Saldo insuficiente', message: 'La cartera de origen no tiene saldo suficiente para esta transferencia.', variant: 'warning', confirmText: 'Entendido' })
+      return
+    }
+    try {
+      const nueva = await createTransferencia(t)
+      setTransfers([nueva, ...transfers])
+      setTransferModalOpen(false)
+    } catch (error) {
+      console.error('Error creando transferencia:', error)
+      setAlert({ title: 'Error', message: 'No se pudo guardar la transferencia en Supabase.', variant: 'danger', confirmText: 'Entendido' })
+    }
+  }
+
   return (
-    <div className="min-h-screen bg-bg text-ink md:pl-60">
+    <div className="min-h-screen bg-bg text-ink">
 
       {/* Ambient background */}
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
@@ -526,189 +556,56 @@ export default function App() {
         <div className="absolute right-0 top-20 h-80 w-80 rounded-full bg-indigo-400/[0.025] blur-3xl" />
       </div>
 
-      {/* Sidebar */}
-      <aside className="
-  hidden
-  fixed inset-y-0 left-0
-  w-60
-  flex-col
-  border-r border-white/[0.05]
-  bg-[#0d1214]/80
-  p-4
-  backdrop-blur-2xl
-  md:flex
-">
+      {/* Barra superior (escritorio) */}
+      <header className="hidden md:block">
+        <div className="mx-auto flex max-w-[1120px] items-center justify-between gap-3 px-5 pb-4 pt-5">
+          <div className="flex items-center gap-2.5 text-[17px] font-semibold">
+            <span className="grid h-[26px] w-[26px] place-items-center rounded-lg bg-brand text-bg">
+              <Wallet size={16} />
+            </span>
+            FinTrack
+          </div>
 
-        {/* Logo */}
-        <div className="mb-8 flex items-center gap-2 px-2 text-lg font-semibold">
-          <span className="
-      grid h-8 w-8
-      place-items-center
-      rounded-xl
-      bg-brand
-      text-bg
-      shadow-[0_0_20px_rgba(112,214,165,0.15)]
-    ">
-            <Wallet size={23} />
-          </span>
-
-          FinTrack
-        </div>
-
-        <div className="flex flex-1 flex-col">
-
-          {/* Inicio */}
-          <button
-            onClick={() => setPage('dash')}
-            className={`
-        mb-6
-        flex w-full items-center gap-3
-        rounded-xl px-3 py-2.5
-        transition-colors
-        ${page === 'dash'
-                ? 'bg-brand/10 text-brand'
-                : 'text-mute hover:bg-hover hover:text-ink'
-              }
-      `}
+          <nav
+            aria-label="Principal"
+            className="flex gap-0.5 overflow-x-auto rounded-full border border-white/[0.07] bg-[#0d0f0e] p-1 [scrollbar-width:none]"
           >
-            <LayoutDashboard size={19} />
-            <span>Inicio</span>
-          </button>
+            {TABS.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setPage(t.id)}
+                className={`whitespace-nowrap rounded-full px-3.5 py-[7px] text-[13.5px] transition-colors ${
+                  page === t.id
+                    ? 'bg-[#131615] text-ink shadow-[inset_0_0_0_1px_rgba(255,255,255,0.13)]'
+                    : 'text-mute hover:text-ink'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
 
-
-          {/* Finanzas */}
-          <div className="mb-6">
-
-            <p className="
-        mb-2 px-3
-        text-xs font-medium
-        uppercase tracking-wider
-        text-mute
-      ">
-              Finanzas
-            </p>
-
-            <div className="space-y-1">
-              {NAV.finanzas.map(n => (
-                <button
-                  key={n.id}
-                  onClick={() => setPage(n.id)}
-                  className={`
-              flex w-full items-center gap-3
-              rounded-xl px-3 py-2.5
-              transition-colors
-              ${page === n.id
-                      ? 'bg-brand/10 text-brand'
-                      : 'text-mute hover:bg-hover hover:text-ink'
-                    }
-            `}
-                >
-                  <n.icon size={19} />
-                  <span>{n.label}</span>
-                </button>
-              ))}
-            </div>
-
-          </div>
-
-
-          {/* Productividad */}
-          <div className="mb-6">
-
-            <p className="
-        mb-2 px-3
-        text-xs font-medium
-        uppercase tracking-wider
-        text-mute
-      ">
-              Productividad
-            </p>
-
-            <div className="space-y-1">
-              {NAV.productividad.map(n => (
-                <button
-                  key={n.id}
-                  onClick={() => setPage(n.id)}
-                  className={`
-              flex w-full items-center gap-3
-              rounded-xl px-3 py-2.5
-              transition-colors
-              ${page === n.id
-                      ? 'bg-brand/10 text-brand'
-                      : 'text-mute hover:bg-hover hover:text-ink'
-                    }
-            `}
-                >
-                  <n.icon size={19} />
-                  <span>{n.label}</span>
-                </button>
-              ))}
-            </div>
-
-          </div>
-
-
-          {/* Personal */}
-          <div>
-
-            <p className="
-        mb-2 px-3
-        text-xs font-medium
-        uppercase tracking-wider
-        text-mute
-      ">
-              Personal
-            </p>
-
-            <div className="space-y-1">
-              {NAV.personal.map(n => (
-                <button
-                  key={n.id}
-                  onClick={() => setPage(n.id)}
-                  className={`
-              flex w-full items-center gap-3
-              rounded-xl px-3 py-2.5
-              transition-colors
-              ${page === n.id
-                      ? 'bg-brand/10 text-brand'
-                      : 'text-mute hover:bg-hover hover:text-ink'
-                    }
-            `}
-                >
-                  <n.icon size={19} />
-                  <span>{n.label}</span>
-                </button>
-              ))}
-            </div>
-
-          </div>
-
+            <button
+              onClick={() => setPage('config')}
+              aria-label="Configuración"
+              title="Configuración"
+              className={`grid place-items-center rounded-full px-3 transition-colors ${
+                page === 'config'
+                  ? 'bg-[#131615] text-ink shadow-[inset_0_0_0_1px_rgba(255,255,255,0.13)]'
+                  : 'text-mute hover:text-ink'
+              }`}
+            >
+              <Settings size={16} />
+            </button>
+          </nav>
         </div>
-
-
-        {/* Configuración */}
-        <button
-          onClick={() => setPage('config')}
-          className={`
-      mt-auto
-      flex w-full items-center gap-3
-      rounded-xl px-3 py-2.5
-      transition-colors
-      ${page === 'config'
-              ? 'bg-brand/10 text-brand'
-              : 'text-mute hover:bg-hover hover:text-ink'
-            }
-    `}
-        >
-          <Settings size={19} />
-          <span>Configuración</span>
-        </button>
-
-      </aside>
-
+      </header>
       {/* Main */}
-      <main className="mx-auto max-w-5xl p-4 pb-28 md:p-8">
-        {page === 'dash' && <Dashboard s={s} onNavigate={setPage} />}
+      <main className={`mx-auto ${
+        page === 'dash'
+          ? 'max-w-none !p-0'
+          : 'max-w-[1120px] p-4 pb-28 md:px-5 md:pb-16 md:pt-2'
+     }`}>
+        {page === 'dash' && (isMobile ? <DashboardMobile s={s} onNavigate={setPage} /> : <Dashboard s={s} onNavigate={setPage} />)}
         {page === 'movs' && <Movimientos s={s} />}
         {page === 'carts' && <Carteras s={s} />}
         {page === 'metas' && <Metas s={s} />}
@@ -723,7 +620,7 @@ export default function App() {
       {showFinance && (
         <div className="
     md:hidden
-    fixed inset-x-3 bottom-20
+    fixed inset-x-3 bottom-[calc(96px+env(safe-area-inset-bottom))]
     z-30
     rounded-2xl
     border border-white/[0.06]
@@ -782,10 +679,7 @@ export default function App() {
 
           <div className="grid grid-cols-2 gap-2">
 
-            {[
-              ...NAV.productividad,
-              ...NAV.personal,
-            ].map(n => (
+            {[...NAV.finanzas, ...NAV.productividad, ...NAV.personal].map(n => (
               <button
                 key={n.id}
                 onClick={() => {
@@ -841,105 +735,17 @@ export default function App() {
         </div>
       )}
 
-      {/* Mobile navigation */}
-      <nav className="
-  md:hidden
-  fixed inset-x-0 bottom-0
-  z-20
-  flex
-  border-t border-white/[0.05]
-  bg-[#0d1214]/85
-  backdrop-blur-2xl
-">
+      {isMobile && <div className="mb-dashboard"><div className="mb-dock">
+        <nav aria-label="Principal">
+          <button className={page === 'dash' ? 'mb-on' : ''} onClick={() => { setPage('dash'); setShowMore(false); setShowFinance(false) }}><LayoutDashboard size={22} />Inicio</button>
+          <button className={page === 'movs' ? 'mb-on' : ''} onClick={() => { setPage('movs'); setShowMore(false); setShowFinance(false) }}><ArrowLeftRight size={22} />Movs</button>
+          <button className="mb-fab" aria-label="Nuevo movimiento" onClick={() => { s.openMov(); setShowMore(false); setShowFinance(false) }}><Plus size={26} /></button>
+          <button className={page === 'metas' ? 'mb-on' : ''} onClick={() => { setPage('metas'); setShowMore(false); setShowFinance(false) }}><Target size={22} />Metas</button>
+          <button className={showMore || showFinance ? 'mb-on' : ''} onClick={() => { setShowMore(!showMore); setShowFinance(false) }}><Wallet size={22} />Más</button>
+        </nav>
+      </div></div>}
 
-        {/* Inicio */}
-        <button
-          onClick={() => {
-            setPage('dash')
-            setShowMore(false)
-          }}
-          className={`
-      flex flex-1
-      flex-col items-center
-      justify-center gap-1
-      py-3
-      transition-colors
-      ${page === 'dash'
-              ? 'text-brand'
-              : 'text-mute'
-            }
-    `}
-        >
-          <LayoutDashboard size={22} />
-          <span className="text-[11px]">
-            Inicio
-          </span>
-        </button>
-
-
-        {/* Finanzas */}
-        <button
-          onClick={() => {
-            setShowFinance(!showFinance)
-            setShowMore(false)
-          }}
-          className={`
-    flex flex-1
-    flex-col items-center
-    justify-center gap-1
-    py-3
-    transition-colors
-    ${showFinance ||
-              NAV.finanzas.some(
-                n => n.id === page
-              )
-              ? 'text-brand'
-              : 'text-mute'
-            }
-  `}
-        >
-          <Wallet size={22} />
-
-          <span className="text-[11px]">
-            Finanzas
-          </span>
-        </button>
-
-
-        {/* Más */}
-        <button
-          onClick={() =>
-            setShowMore(!showMore)
-          }
-          className={`
-      flex flex-1
-      flex-col items-center
-      justify-center gap-1
-      py-3
-      transition-colors
-      ${showMore ||
-              NAV.productividad.some(
-                n => n.id === page
-              ) ||
-              NAV.personal.some(
-                n => n.id === page
-              ) ||
-              page === 'config'
-              ? 'text-brand'
-              : 'text-mute'
-            }
-    `}
-        >
-          <span className="text-xl leading-none">
-            ☰
-          </span>
-
-          <span className="text-[11px]">
-            Más
-          </span>
-        </button>
-
-      </nav>
+      {transferModalOpen && <TransferModal s={s} onSave={saveDashboardTransfer} onClose={() => setTransferModalOpen(false)} />}
 
       {/* Movimiento modal */}
       {modal && (

@@ -1,7 +1,28 @@
+﻿@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Figtree:wght@400;500;600&display=swap");
 @import "tailwindcss";
 
+
+:root {
+  --dashboard-bg: #060707;
+  --dashboard-surface: #0d0f0e;
+  --dashboard-raised: #131615;
+  --dashboard-line: rgba(255, 255, 255, .07);
+  --dashboard-line-strong: rgba(255, 255, 255, .13);
+  --dashboard-ink: #f3f6f4;
+  --dashboard-muted: #8a948f;
+  --dashboard-brand: #70d6a5;
+  --dashboard-brand-dark: #2f7d5c;
+  --dashboard-negative: #ff7b7b;
+  --dashboard-gold: #ffd27b;
+  --dashboard-font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --dashboard-font-body: "Figtree", ui-sans-serif, system-ui, sans-serif;
+}
+
+@keyframes dashboard-draw { to { stroke-dashoffset: 0 } }
+@keyframes dashboard-fade { to { opacity: 1 } }
+@keyframes dashboard-in { from { opacity: 0; transform: translateY(10px) } to { opacity: 1; transform: none } }
 @theme {
-  --color-bg: #080b0d;
+  --color-bg: #060707;
   --color-surface: #101518;
   --color-hover: #151b1e;
   --color-brand: #70d6a5;
@@ -84,8 +105,81 @@ select option:checked { background: #1a2521; color: #70d6a5; }
   from { opacity: 0; transform: translateY(10px) scale(0.98) }
   to   { opacity: 1; transform: none }
 }
-.animate-fade { animation: fade-in 0.16s ease-out; }
-.animate-pop  { animation: pop-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.animate-fade { animation: fade-in 0.24s ease-out; }
+.animate-pop  { animation: pop-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes modal-enter {
+  from { opacity: 0.96; transform: translateY(88px) scale(1); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-modal-enter { animation: modal-enter 0.96s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@media (min-width: 768px) {
+  @keyframes modal-enter {
+    from { opacity: 0; transform: translateY(24px) scale(0.985); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+}
+
+/* Lenguaje visual compartido para las vistas de gesti?n */
+.app-view {
+  --view-accent: var(--dashboard-brand);
+  position: relative;
+  isolation: isolate;
+  color: var(--dashboard-ink);
+  font-family: var(--dashboard-font-body);
+  animation: dashboard-in 0.32s cubic-bezier(0.2, 0.7, 0.25, 1) both;
+}
+.app-view::before {
+  position: absolute;
+  z-index: -1;
+  top: -34px;
+  left: -28px;
+  width: 220px;
+  height: 150px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--view-accent) 7%, transparent);
+  content: "";
+  filter: blur(58px);
+  pointer-events: none;
+}
+.app-heading-text,
+.app-page-heading h2 {
+  font-family: var(--dashboard-font-display);
+  letter-spacing: -0.035em;
+}
+.app-page-heading h2 { text-wrap: balance; }
+.app-page-heading > h2::before {
+  display: inline-block;
+  width: 4px;
+  height: 0.82em;
+  margin-right: 0.55em;
+  border-radius: 99px;
+  background: var(--view-accent, var(--dashboard-brand));
+  box-shadow: 0 0 18px color-mix(in srgb, var(--view-accent, var(--dashboard-brand)) 45%, transparent);
+  content: "";
+  vertical-align: -0.03em;
+}
+.app-view--movimientos { --view-accent: #70d6a5; }
+.app-view--carteras { --view-accent: #71c9e8; }
+.app-view--metas { --view-accent: #d1a5ff; }
+.app-view--analisis { --view-accent: #70d6a5; }
+.app-view--config { --view-accent: #aab8bf; }
+.app-view--tareas { --view-accent: #ffd27b; }
+.app-view--habitos { --view-accent: #70d6a5; }
+.app-view--motopage { --view-accent: #ff9b72; }
+.app-view input:not([type="checkbox"]),
+.app-view select,
+.app-view textarea {
+  transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+.app-view input:not([type="checkbox"]):focus,
+.app-view select:focus,
+.app-view textarea:focus {
+  border-color: color-mix(in srgb, var(--view-accent) 52%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--view-accent) 10%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-view { animation: none; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

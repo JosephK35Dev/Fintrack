@@ -1,4 +1,4 @@
-﻿import { ReactNode, useRef, useState } from 'react'
+﻿import { ReactNode, useEffect, useRef, useState } from 'react'
 import {
   Bar,
   BarChart,
@@ -100,6 +100,10 @@ import {
   desmarcarHabito,
 } from './services/habitos'
 import { saveMoto, uploadMotoImage, updateMotoImage } from './services/moto'
+import { useDashboardData } from './hooks/useDashboardData'
+import './styles/dashboard-desktop.css'
+import './styles/dashboard-mobile.css'
+import './styles/screens.css'
 import {
   createMantenimientoMoto,
   updateMantenimientoMoto,
@@ -110,6 +114,8 @@ import {
   updateGastoMoto,
   deleteGastoMoto,
 } from './services/gastosMoto'
+import { DashboardMobile } from './dashboard/DashboardMobile'
+export { DashboardMobile }
 
 const COLORS = [
   '#70d6a5',
@@ -192,13 +198,13 @@ const Card = ({
     className={`
       relative overflow-hidden
       rounded-2xl
-      border border-white/[0.07]
-      bg-surface/70
+      border border-white/[0.075]
+      bg-[linear-gradient(145deg,rgba(255,255,255,0.035),transparent_44%),rgba(16,21,24,0.76)]
       p-5
-      shadow-[0_1px_0_rgba(255,255,255,0.04)_inset,0_10px_30px_-12px_rgba(0,0,0,0.5)]
+      shadow-[0_1px_0_rgba(255,255,255,0.045)_inset,0_18px_45px_-28px_rgba(0,0,0,0.9)]
       backdrop-blur-xl
-      transition-all duration-200
-      hover:border-white/[0.11]
+      transition-all duration-300
+      hover:-translate-y-0.5 hover:border-brand/20 hover:shadow-[0_22px_55px_-30px_rgba(112,214,165,0.18)]
       ${className}
     `}
   >
@@ -213,7 +219,7 @@ const Title = ({
   children: ReactNode
   right?: ReactNode
 }) => (
-  <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+  <div className="app-page-heading mb-6 flex flex-wrap items-center justify-between gap-3">
     <h2 className="min-w-0 text-2xl font-semibold tracking-tight md:text-[28px]">
       {children}
     </h2>
@@ -262,35 +268,46 @@ function Modal({
   title,
   onClose,
   children,
+  position = 'bottom',
 }: {
   title: string
   onClose: () => void
   children: ReactNode
+  position?: 'bottom' | 'center' | 'raised' | 'lower' | 'top'
 }) {
+  const centered = position !== 'bottom'
+  const verticalPosition = position === 'top'
+    ? 'items-start px-4 pt-[calc(6rem+env(safe-area-inset-top))] pb-4 md:items-center md:p-4'
+    : position === 'lower'
+      ? 'items-center px-4 pt-[calc(20rem+env(safe-area-inset-top))] pb-4 md:items-center md:p-4'
+      : centered
+        ? `items-center px-4 pt-4 ${position === 'raised' ? 'pb-12' : 'pb-4'} md:items-center md:p-4`
+        : 'items-end p-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] md:items-center md:p-4'
+
   return (
     <div
-      className="
+      className={`
         animate-fade
         fixed inset-0 z-50
-        flex items-end justify-center
-        bg-black/70 p-0
+        flex justify-center
+        ${verticalPosition}
+        bg-black/70
         backdrop-blur-sm
-        sm:items-center sm:p-4
-      "
+      `}
       onClick={onClose}
     >
       <div
-        className="
-          animate-pop
+        className={`
+          animate-modal-enter
           max-h-[92dvh] w-full max-w-md
           overflow-y-auto
-          rounded-t-3xl border border-white/[0.09]
+          ${centered ? 'rounded-2xl' : 'rounded-t-3xl'} border border-white/[0.09]
           bg-surface/95
-          p-5 pb-6
+          p-5 ${centered ? 'pb-5' : 'pb-[calc(1.5rem+env(safe-area-inset-bottom))]'}
           shadow-[0_24px_90px_rgba(0,0,0,0.55)]
           backdrop-blur-2xl
-          sm:rounded-2xl sm:pb-5
-        "
+          md:rounded-2xl md:pb-5
+        `}
         onClick={e => e.stopPropagation()}
       >
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/[0.12] sm:hidden" />
@@ -460,8 +477,14 @@ const byCat = (ms: Mov[]) => {
     .sort((a, b) => b.value - a.value)
 }
 
-function CatChart({ ms }: { ms: Mov[] }) {
-  const data = byCat(ms)
+function CatChart({
+  ms,
+  data: sharedData,
+}: {
+  ms: Mov[]
+  data?: { name: string; value: number }[]
+}) {
+  const data = sharedData ?? byCat(ms)
 
   if (!data.length) {
     return <Empty t="Aún no hay gastos para graficar." />
@@ -624,234 +647,63 @@ function MovRow({
 const sorted = (ms: Mov[]) =>
   [...ms].sort((a, b) => b.fecha.localeCompare(a.fecha))
 
-export function Dashboard({
-  s,
-  onNavigate,
-}: {
-  s: Store
-  onNavigate?: (page: 'habitos' | 'tareas' | 'moto') => void
-}) {
+export function Dashboard({ s, onNavigate }: { s: Store; onNavigate?: (page: 'habitos' | 'tareas' | 'moto' | 'movs') => void }) {
   const [hide, setHide] = useState(false)
-  const now = new Date()
-  const hora = now.getHours()
+  const [hovered, setHovered] = useState<number | null>(null)
+  const [categoryHover, setCategoryHover] = useState<string | null>(null)
+  const { saludo, fechaActual, total, ingresosMes, gastosMes, balanceMes, pendientes, habitosDeHoy, completadosHoy, completadosProgramados, progresoHabitos, rachaActual, formatFecha, movimientosRecientes, categorias, balanceHistory } = useDashboardData(s)
+  const mask = (n: number) => hide ? '$ ••••••' : money(n)
+  const values = balanceHistory.map(p => p.value)
+  const min = Math.min(...values), max = Math.max(...values)
+  const points = balanceHistory.map((p, i) => ({ x: i / Math.max(values.length - 1, 1) * 600, y: 130 - (p.value - min) / (max - min || 1) * 110 }))
+  const line = points.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')
+  const totalMes = ingresosMes + gastosMes
+  const pctIngresos = totalMes ? Math.round(ingresosMes / totalMes * 100) : 0
+  const colores = ['#70d6a5', '#3fa37a', '#9fe8c4', '#2f7d5c', '#56615b', '#ffd27b', '#7bb6ff']
+  const sumaCategorias = categorias.reduce((a, c) => a + c.value, 0)
+  const circ = 2 * Math.PI * 56
+  let off = 0
+  const segmentos = categorias.map((c, i) => { const len = sumaCategorias ? c.value / sumaCategorias * circ : 0; const seg = { ...c, color: colores[i % colores.length], len, off }; off += len; return seg })
 
-  const saludo =
-    hora < 12
-      ? 'Buenos días'
-      : hora < 19
-        ? 'Buenas tardes'
-        : 'Buenas noches'
-
-  // Las fechas de movimiento son fechas calendario (YYYY-MM-DD), no instantes.
-  // Compararlas como Date puede moverlas al día anterior por la zona horaria.
-  const fechaMes = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const movimientosMes = s.movs.filter(m => {
-    return m.fecha.slice(0, 7) === fechaMes
-  })
-  const ingresosMes = sum(movimientosMes, 'ingreso')
-  const gastosMes = sum(movimientosMes, 'gasto')
-  const balanceMes = ingresosMes - gastosMes
-  const total = s.carts
-    .filter(c => c.incluirEnTotal)
-    .reduce((a, c) => a + s.saldo(c.id), 0)
-  const prioridad = { alta: 0, media: 1, baja: 2 }
-  const pendientes = [...s.tareas.filter(t => !t.completada)].sort((a, b) => {
-    const porPrioridad = prioridad[a.prioridad] - prioridad[b.prioridad]
-    if (porPrioridad) return porPrioridad
-    if (a.fecha && b.fecha) return a.fecha.localeCompare(b.fecha)
-    if (a.fecha) return -1
-    if (b.fecha) return 1
-    return b.created_at.localeCompare(a.created_at)
-  })
-  const mask = (n: number) => (hide ? '$ ••••••' : money(n))
-  const fechaActual = new Intl.DateTimeFormat('es-CO', {
-    weekday: 'long', day: 'numeric', month: 'long',
-  }).format(now)
-  const fechaHoy = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-')
-  const diaHoy = ((now.getDay() + 6) % 7) + 1
-  const habitosActivos = s.habitos.filter(h => h.activo)
-  const habitosDeHoy = habitosActivos.filter(h => (h.diasSemana ?? [1, 2, 3, 4, 5, 6, 7]).includes(diaHoy))
-  const completadosHoy = new Set(
-    s.registrosHabitos.filter(r => r.fecha === fechaHoy).map(r => r.habito_id)
-  )
-  const completadosProgramados = habitosDeHoy.filter(h => completadosHoy.has(h.id)).length
-  const progresoHabitos = habitosDeHoy.length
-    ? Math.round(completadosProgramados / habitosDeHoy.length * 100)
-    : 0
-  const rachaDe = (habitoId: string) => {
-    const habito = habitosActivos.find(h => h.id === habitoId)
-    if (!habito) return 0
-    const dias = habito.diasSemana ?? [1, 2, 3, 4, 5, 6, 7]
-    const registros = new Set(s.registrosHabitos.filter(r => r.habito_id === habitoId).map(r => r.fecha))
-    const cursor = new Date(now)
-    if (dias.includes(diaHoy) && !registros.has(fechaHoy)) cursor.setDate(cursor.getDate() - 1)
-    let racha = 0
-    while (true) {
-      const dia = ((cursor.getDay() + 6) % 7) + 1
-      if (dias.includes(dia)) {
-        const fecha = [cursor.getFullYear(), String(cursor.getMonth() + 1).padStart(2, '0'), String(cursor.getDate()).padStart(2, '0')].join('-')
-        if (!registros.has(fecha)) break
-        racha += 1
-      }
-      cursor.setDate(cursor.getDate() - 1)
-    }
-    return racha
-  }
-  const rachaActual = habitosActivos.reduce((max, habito) => Math.max(max, rachaDe(habito.id)), 0)
-  const formatFecha = (fecha?: string) => {
-    if (!fecha) return 'Sin registrar'
-    const [year, month, day] = fecha.slice(0, 10).split('-').map(Number)
-    return new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })
-      .format(new Date(year, month - 1, day))
-  }
-
-  return (
-    <div className="space-y-6 md:space-y-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-brand/75">{fechaActual}</p>
-          <h1 className="mt-1.5 text-2xl font-semibold tracking-tight md:text-[28px]">{saludo}, Joseph</h1>
-          <p className="mt-1 text-sm text-mute">Tu panorama financiero y personal, de un vistazo.</p>
+  return <div className="dk-dashboard"><div className="dk-wrap">
+    <header className="dk-head dk-in" style={{ '--i': 1 } as React.CSSProperties}><div><p>{fechaActual}</p><h1>{saludo}, Joseph</h1></div><button className="dk-cta" onClick={() => s.openMov()}><Plus size={16} />Nuevo movimiento</button></header>
+    <section className="dk-grid dk-hero">
+      <div className="dk-card dk-balance dk-in" style={{ '--i': 2 } as React.CSSProperties}>
+        <div className="dk-top"><div><h2>Balance total</h2><p className="dk-sub">Carteras incluidas en tu balance</p></div><button className="dk-eye" aria-label={hide ? 'Mostrar montos' : 'Ocultar montos'} aria-pressed={hide} onClick={() => setHide(v => !v)}>{hide ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
+        <div className={`dk-big${hide ? ' dk-hid' : ''}`}>{mask(total)}</div><span className={`dk-pill${balanceMes < 0 ? ' dk-n' : ''}`}>Balance del mes <b>{mask(balanceMes)}</b></span>
+        <div className="dk-chart" onPointerMove={e => { const r = e.currentTarget.getBoundingClientRect(); setHovered(Math.round(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * Math.max(points.length - 1, 0))) }} onPointerLeave={() => setHovered(null)}>
+          <svg viewBox="0 0 600 140" preserveAspectRatio="none" aria-label="Evolución del balance en los últimos 30 días"><defs><linearGradient id="dk-chart-gradient" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#70d6a5" stopOpacity=".28" /><stop offset="1" stopColor="#70d6a5" stopOpacity="0" /></linearGradient></defs><path className="dk-area" d={`${line} L600 140 L0 140Z`} fill="url(#dk-chart-gradient)" /><path className="dk-line" d={line} pathLength="1" vectorEffect="non-scaling-stroke" />{hovered !== null && points[hovered] && <><line className="dk-guide" x1={points[hovered].x} x2={points[hovered].x} y1="0" y2="140" /><circle className="dk-dot" cx={points[hovered].x} cy={points[hovered].y} r="4" /></>}</svg>
+          {hovered !== null && <div className="dk-tt" style={{ left: `${hovered / Math.max(points.length - 1, 1) * 100}%` }}>{formatFecha(balanceHistory[hovered]?.date)}, {mask(balanceHistory[hovered]?.value ?? 0)}</div>}
         </div>
-        <button className={`${btn} w-full justify-center sm:w-auto`} onClick={() => s.openMov()}>
-          <Plus size={16} /> Nuevo movimiento
-        </button>
-      </header>
-
-      <Card className="relative isolate !overflow-hidden !border-brand/[0.16] !bg-[#101915] !p-5 shadow-[0_24px_80px_rgba(36,120,78,0.18)] sm:!p-7">
-        <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(118deg,#101714_0%,#16231c_50%,#101916_100%)]" />
-        <div className="pointer-events-none absolute -right-16 -top-28 -z-10 h-80 w-80 rounded-full bg-[#70d6a5]/[0.22] blur-[90px]" />
-        <div className="pointer-events-none absolute -bottom-36 left-[28%] -z-10 h-72 w-72 rounded-full bg-emerald-400/[0.12] blur-[100px]" />
-        <div className="pointer-events-none absolute inset-0 -z-10 opacity-[0.08] [background-image:linear-gradient(135deg,transparent_0%,rgba(255,255,255,0.18)_50%,transparent_100%)]" />
-        <div className="relative">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.17em] text-brand/90">Balance total</p>
-              <p className="mt-1 text-xs text-white/55">Carteras incluidas en tu balance</p>
-            </div>
-            <IconBtn onClick={() => setHide(value => !value)}>
-              {hide ? <EyeOff size={17} /> : <Eye size={17} />}
-            </IconBtn>
-          </div>
-          <p className="mt-5 break-words text-[clamp(2.25rem,7vw,3.75rem)] font-semibold leading-none tracking-[-0.045em] text-white">{mask(total)}</p>
-          <div className="mt-5 inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-full border border-white/[0.09] bg-black/[0.16] px-3 py-1.5 text-xs">
-            <span className="text-white/55">Balance del mes</span>
-            <span className={`font-semibold ${balanceMes >= 0 ? 'text-brand' : 'text-neg'}`}>{mask(balanceMes)}</span>
-          </div>
-        </div>
-      </Card>
-
-      <section className="grid gap-3 sm:grid-cols-2">
-        <Card className="!p-4 sm:!p-5">
-          <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand/[0.09] text-brand"><ArrowDownLeft size={19} /></span>
-            <div className="min-w-0"><p className="text-xs text-mute">Ingresos este mes</p><p className="mt-1 break-words text-xl font-semibold tracking-tight text-brand">{mask(ingresosMes)}</p></div>
-          </div>
-        </Card>
-        <Card className="!p-4 sm:!p-5">
-          <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-neg/[0.09] text-neg"><ArrowUpRight size={19} /></span>
-            <div className="min-w-0"><p className="text-xs text-mute">Gastos este mes</p><p className="mt-1 break-words text-xl font-semibold tracking-tight text-neg">{mask(gastosMes)}</p></div>
-          </div>
-        </Card>
-      </section>
-
-      <section>
-        <div className="mb-3 flex items-end justify-between gap-3">
-          <div><h2 className="text-lg font-semibold tracking-tight">Carteras</h2><p className="mt-1 text-xs text-mute">Saldos y participación en tu balance</p></div>
-          <span className="text-xs text-mute">{s.carts.length} {s.carts.length === 1 ? 'cartera' : 'carteras'}</span>
-        </div>
-        {s.carts.length ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {s.carts.map(c => (
-              <Card key={c.id} className="!p-4 transition-transform duration-200 hover:-translate-y-0.5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0"><p className="truncate text-sm font-medium">{c.nombre}</p><p className="mt-1 text-[11px] text-mute">{c.incluirEnTotal ? 'Incluida en el balance' : 'Fuera del balance total'}</p></div>
-                  <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${c.incluirEnTotal ? 'bg-brand' : 'bg-white/20'}`} />
-                </div>
-                <p className="mt-4 break-words text-lg font-semibold tracking-tight">{mask(s.saldo(c.id))}</p>
-              </Card>
-            ))}
-          </div>
-        ) : <Card><Empty t="Todavía no tienes carteras." /></Card>}
-      </section>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="!p-5 sm:!p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div><p className="text-xs font-medium uppercase tracking-[0.13em] text-brand/75">Rutina</p><h2 className="mt-1 text-lg font-semibold">Hábitos de hoy</h2></div>
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#ffd27b]/[0.09] text-[#ffd27b]"><Flame size={19} /></span>
-          </div>
-          <div className="mt-5 flex items-end justify-between gap-3">
-            <p className="text-2xl font-semibold tracking-tight"><span className="text-brand">{completadosProgramados}</span><span className="text-mute"> / {habitosDeHoy.length}</span></p>
-            <span className="text-sm font-medium text-mute">{progresoHabitos}%</span>
-          </div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.06]" role="progressbar" aria-label="Progreso de hábitos de hoy" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progresoHabitos}>
-            <div className="h-full rounded-full bg-brand transition-[width] duration-500" style={{ width: `${progresoHabitos}%` }} />
-          </div>
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs">
-            {habitosDeHoy.length ? <span className="inline-flex items-center gap-1.5 text-mute"><Flame size={14} className="text-[#ffd27b]" /> Racha más alta: <strong className="font-semibold text-ink">{rachaActual} {rachaActual === 1 ? 'día' : 'días'}</strong></span> : <span className="text-mute">No hay hábitos programados para hoy.</span>}
-            <button type="button" onClick={() => onNavigate?.('habitos')} className="inline-flex items-center gap-1 font-medium text-brand transition hover:text-white">Ver hábitos <ChevronRight size={15} /></button>
-          </div>
-        </Card>
-
-        <Card className="!p-5 sm:!p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div><p className="text-xs font-medium uppercase tracking-[0.13em] text-brand/75">Organización</p><h2 className="mt-1 text-lg font-semibold">Tareas pendientes</h2></div>
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand/[0.08] text-brand"><CheckSquare size={19} /></span>
-          </div>
-          <p className="mt-4 text-2xl font-semibold tracking-tight">{pendientes.length}<span className="ml-2 text-sm font-normal text-mute">pendientes</span></p>
-          {pendientes.length ? (
-            <div className="mt-3 space-y-1.5">
-              {pendientes.slice(0, 3).map(t => <div key={t.id} className="flex items-center gap-2.5 rounded-xl border border-white/[0.045] bg-white/[0.02] px-3 py-2.5"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${t.prioridad === 'alta' ? 'bg-neg' : t.prioridad === 'media' ? 'bg-[#ffd27b]' : 'bg-brand/70'}`} /><span className="min-w-0 flex-1 truncate text-sm">{t.titulo}</span>{t.fecha && <span className="shrink-0 text-[10px] text-mute">{formatFecha(t.fecha)}</span>}</div>)}
-            </div>
-          ) : <p className="mt-3 rounded-xl border border-white/[0.045] bg-white/[0.02] px-3 py-3 text-sm text-mute">No tienes tareas pendientes.</p>}
-          <div className="mt-3 flex justify-end"><button type="button" onClick={() => onNavigate?.('tareas')} className="inline-flex items-center gap-1 text-xs font-medium text-brand transition hover:text-white">Ver tareas <ChevronRight size={15} /></button></div>
-        </Card>
       </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <Card className="!p-5 sm:!p-6">
-          <div className="mb-3"><h2 className="text-lg font-semibold tracking-tight">Movimientos recientes</h2><p className="mt-1 text-xs text-mute">Tus últimos registros</p></div>
-          {s.movs.length ? <div className="divide-y divide-white/[0.045]">
-            {sorted(s.movs).slice(0, 5).map(m => {
-              const cartera = s.carts.find(c => c.id === m.cartera)
-              const ingreso = m.tipo === 'ingreso'
-              return <div key={m.id} className="flex min-w-0 items-center gap-3 py-3 first:pt-1 last:pb-1">
-                <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${ingreso ? 'bg-brand/[0.08] text-brand' : 'bg-neg/[0.08] text-neg'}`}>{ingreso ? <ArrowDownLeft size={17} /> : <ArrowUpRight size={17} />}</span>
-                <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{m.desc}</p><p className="mt-0.5 truncate text-[11px] text-mute">{m.fecha} · {m.cat}{cartera ? ` · ${cartera.nombre}` : ''}</p></div>
-                <span className={`shrink-0 text-right text-sm font-semibold ${ingreso ? 'text-brand' : 'text-neg'}`}>{ingreso ? '+' : '−'}{money(m.monto)}</span>
-              </div>
-            })}
-          </div> : <Empty t="Sin movimientos todavía. Registra el primero." />}
-        </Card>
-        <Card className="!p-5 sm:!p-6">
-          <div className="mb-3"><h2 className="text-lg font-semibold tracking-tight">Gastos por categoría</h2><p className="mt-1 text-xs text-mute">Distribución de tus gastos registrados</p></div>
-          {s.movs.some(m => m.tipo === 'gasto') ? <CatChart ms={s.movs} /> : <Empty t="Aún no hay gastos para mostrar." />}
-        </Card>
-      </div>
-
-      <section>
-        <div className="mb-3"><p className="text-xs font-medium uppercase tracking-[0.13em] text-brand/75">Movilidad</p><h2 className="mt-1 text-lg font-semibold">Mi moto</h2></div>
-        <Card className="!p-4 sm:!p-5">
-          {s.moto ? <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-            <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xl border border-white/[0.06] bg-[#101719] sm:w-48 sm:shrink-0">
-              {s.moto.imagenUrl ? <img src={s.moto.imagenUrl} alt={s.moto.nombre} className="h-full w-full object-contain" /> : <div className="grid h-full place-items-center text-brand/55"><Bike size={32} strokeWidth={1.3} /></div>}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1"><h3 className="text-base font-semibold">{s.moto.nombre}</h3><span className="text-xs text-mute">{s.moto.anio}</span></div>
-              <div className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-xs">
-                <span className="inline-flex items-center gap-1.5 text-mute"><Gauge size={14} className="text-brand" /> {s.moto.kilometrajeActual.toLocaleString('es-CO')} km</span>
-                <span className="text-mute">Último cambio de aceite: <strong className="font-medium text-ink">{formatFecha(s.moto.fechaUltimoCambioAceite)}</strong></span>
-              </div>
-            </div>
-            <button type="button" onClick={() => onNavigate?.('moto')} className="inline-flex min-h-10 items-center justify-center gap-1 rounded-xl border border-white/[0.08] px-3 py-2 text-sm font-medium text-ink transition hover:border-brand/25 hover:text-brand sm:shrink-0">Ver moto <ChevronRight size={15} /></button>
-          </div> : <div className="flex items-center gap-3 py-1 text-sm text-mute"><Bike size={20} className="text-brand/70" /> No hay información de la moto disponible.</div>}
-        </Card>
-      </section>
-    </div>
-  )
+      <div className="dk-card dk-flow dk-in" style={{ '--i': 3 } as React.CSSProperties}><div><h2>Este mes</h2><p className="dk-sub">Cómo se reparte tu dinero</p></div><div className="dk-stat"><span className="dk-ic dk-g"><ArrowDownLeft size={19} /></span><div><span>Ingresos</span><b>{mask(ingresosMes)}</b></div></div><div className="dk-stat"><span className="dk-ic dk-r"><ArrowUpRight size={19} /></span><div><span>Gastos</span><b>{mask(gastosMes)}</b></div></div><div><div className="dk-split"><i style={{ width: `${pctIngresos}%` }} /></div><div className="dk-splitl"><span>{pctIngresos}% ingresos</span><span>{100 - pctIngresos}% gastos</span></div></div></div>
+    </section>
+    <section className="dk-wallets">{s.carts.length ? s.carts.map((c, i) => <div key={c.id} className="dk-card dk-w dk-in" style={{ '--i': 4 + i * .4 } as React.CSSProperties}><div className="dk-r"><span>{c.nombre}</span><i className={`dk-d${c.incluirEnTotal ? '' : ' dk-off'}`} /></div><b>{mask(s.saldo(c.id))}</b><small>{c.incluirEnTotal ? 'Incluida en el balance' : 'Fuera del balance'}</small></div>) : <div className="dk-card">Todavía no tienes carteras.</div>}</section>
+    <section className="dk-grid dk-two">
+      <div className="dk-card dk-in" style={{ '--i': 5 } as React.CSSProperties}><div className="dk-card-head"><div><h2>Hábitos de hoy</h2><p className="dk-sub">Marca cada uno al completarlo</p></div><span className="dk-ic dk-y"><Flame size={19} /></span></div><div className="dk-ringrow"><div className="dk-ring"><svg viewBox="0 0 104 104"><circle className="dk-bg" cx="52" cy="52" r="46" /><circle className="dk-fg" cx="52" cy="52" r="46" strokeDasharray="289" strokeDashoffset={289 * (1 - progresoHabitos / 100)} /></svg><div>{completadosProgramados}/{habitosDeHoy.length}</div></div><div className="dk-list">{habitosDeHoy.length ? habitosDeHoy.map(h => <button key={h.id} className={`dk-item${completadosHoy.has(h.id) ? ' dk-done' : ''}`} onClick={() => onNavigate?.('habitos')}><span className="dk-chk"><Check size={12} /></span><span className="dk-t">{h.nombre}</span></button>) : <p className="dk-sub">No hay hábitos programados para hoy.</p>}</div></div><p className="dk-streak"><Flame size={14} />Racha más alta: <b>{rachaActual} {rachaActual === 1 ? 'día' : 'días'}</b></p></div>
+      <div className="dk-card dk-in" style={{ '--i': 6 } as React.CSSProperties}><div className="dk-card-head"><div><h2>Tareas pendientes</h2><p className="dk-sub">{pendientes.length ? `${pendientes.length} pendientes` : 'Todo al día'}</p></div><span className="dk-ic dk-g"><CheckSquare size={19} /></span></div><div className="dk-list" style={{ marginTop: 14 }}>{pendientes.length ? pendientes.slice(0, 4).map(t => <button key={t.id} className="dk-item" onClick={() => onNavigate?.('tareas')}><span className="dk-chk"><Circle size={12} /></span><span className="dk-t">{t.titulo}</span>{t.prioridad !== 'baja' && <span className={`dk-tag dk-${t.prioridad}`}>{t.prioridad}</span>}</button>) : <p className="dk-sub">No tienes tareas pendientes.</p>}</div></div>
+    </section>
+    <section className="dk-grid dk-bottom"><div className="dk-card dk-in" style={{ '--i': 7 } as React.CSSProperties}><h2>Movimientos recientes</h2><p className="dk-sub">Tus últimos registros</p><div style={{ marginTop: 8 }}>{movimientosRecientes.length ? movimientosRecientes.map(m => { const c = s.carts.find(x => x.id === m.cartera); const ing = m.tipo === 'ingreso'; return <div key={m.id} className="dk-mv"><span className={`dk-ic ${ing ? 'dk-g' : 'dk-r'}`}>{ing ? <ArrowDownLeft size={16} /> : <ArrowUpRight size={16} />}</span><div className="dk-m"><p>{m.desc}</p><span>{formatFecha(m.fecha)}, {m.cat}{c ? `, ${c.nombre}` : ''}</span></div><span className={`dk-amt ${ing ? 'dk-p' : 'dk-n'}`}>{ing ? '+' : '−'}{mask(m.monto)}</span></div> }) : <p className="dk-sub">Sin movimientos todavía. Registra el primero.</p>}</div></div>
+      <div className="dk-card dk-in" style={{ '--i': 8 } as React.CSSProperties}><h2>Gastos por categoría</h2><p className="dk-sub">Distribución de tus gastos</p>{segmentos.length ? <div className="dk-donut"><svg viewBox="0 0 150 150" className={categoryHover ? 'dk-f' : ''} onPointerLeave={() => setCategoryHover(null)}><circle cx="75" cy="75" r="56" stroke="var(--dk-raise)" strokeWidth="16" fill="none" />{segmentos.map(x => <circle key={x.name} className={categoryHover === x.name ? 'dk-hl' : ''} onPointerEnter={() => setCategoryHover(x.name)} cx="75" cy="75" r="56" stroke={x.color} strokeWidth="16" fill="none" strokeDasharray={`${Math.max(0, x.len - 3)} ${circ}`} strokeDashoffset={-x.off} />)}</svg><div className="dk-leg">{segmentos.slice(0, 6).map(x => <div key={x.name} onPointerEnter={() => setCategoryHover(x.name)} onPointerLeave={() => setCategoryHover(null)}><i style={{ background: x.color }} />{x.name}<em>{Math.round(x.value / sumaCategorias * 100)}%</em></div>)}</div></div> : <p className="dk-sub">Aún no hay gastos para mostrar.</p>}</div></section>
+    <section className="dk-card dk-in" style={{ '--i': 9 } as React.CSSProperties}><div className="dk-moto"><div className="dk-mimg">{s.moto?.imagenUrl ? <img src={s.moto.imagenUrl} alt={s.moto.nombre} /> : <Bike size={42} />}</div><div className="dk-info"><h3>{s.moto?.nombre ?? 'Mi moto'}</h3><p className="dk-sub">{s.moto ? `${s.moto.marca}, ${s.moto.anio}` : 'Datos de tu motocicleta'}</p>{s.moto ? <div className="dk-facts"><span><b>{s.moto.kilometrajeActual.toLocaleString('es-CO')} km</b> recorridos</span><span>Último cambio de aceite <b>{formatFecha(s.moto.fechaUltimoCambioAceite)}</b></span></div> : <div className="dk-facts">Aún no hay información registrada.</div>}</div><button className="dk-ghost" onClick={() => onNavigate?.('moto')}>Ver moto <ChevronRight size={15} /></button></div></section>
+  </div></div>
 }
+
+
+const etiquetaDia = (fecha: string) => {
+  const f = fecha.slice(0, 10)
+  if (f === daysAgo(0)) return 'Hoy'
+  if (f === daysAgo(1)) return 'Ayer'
+  const [y, m, d] = f.split('-').map(Number)
+  return new Intl.DateTimeFormat('es-CO', {
+    day: 'numeric',
+    month: 'short',
+    year: y !== new Date().getFullYear() ? 'numeric' : undefined,
+  }).format(new Date(y, m - 1, d))
+}
+
+// ───────────────────────────────── MovModal ─────────────────────────────────
+
 export function MovModal({
   s,
   mov,
@@ -875,42 +727,48 @@ export function MovModal({
     }
   )
 
-  const up = (p: Partial<Mov>) =>
-    setF({ ...f, ...p })
+  const up = (p: Partial<Mov>) => setF({ ...f, ...p })
 
   const ok = f.desc.trim() && f.monto > 0 && f.fecha
 
   return (
     <Modal
-      title={mov ? 'Editar movimiento' : 'Nuevo movimiento'}
+      title={mov && s.movs.some(x => x.id === mov.id) ? 'Editar movimiento' : 'Nuevo movimiento'}
       onClose={onClose}
     >
-      <div className="space-y-3">
-
-        <div className="grid grid-cols-2 gap-2">
+      <div className="space-y-4">
+        <div
+          className={`ui-seg ${f.tipo === 'ingreso' ? 'ui-seg-in' : ''}`}
+          role="group"
+          aria-label="Tipo de movimiento"
+        >
+          <i />
           {(['gasto', 'ingreso'] as Tipo[]).map(t => (
             <button
               key={t}
+              type="button"
+              className={f.tipo === t ? 'ui-on' : ''}
+              aria-pressed={f.tipo === t}
               onClick={() => up({ tipo: t })}
-              className={`
-                rounded-xl
-                border
-                py-2.5
-                text-sm
-                capitalize
-                transition-all duration-200
-                ${f.tipo === t
-                  ? t === 'gasto'
-                    ? 'border-neg/20 bg-neg text-bg shadow-[0_0_18px_rgba(255,123,123,0.12)]'
-                    : 'border-brand/20 bg-brand text-bg shadow-[0_0_18px_rgba(112,214,165,0.12)]'
-                  : 'border-white/[0.05] bg-white/[0.025] text-mute hover:bg-white/[0.05] hover:text-ink'
-                }
-              `}
             >
-              {t}
+              {t === 'gasto' ? 'Gasto' : 'Ingreso'}
             </button>
           ))}
         </div>
+
+        <label className="ui-amount-wrap">
+          <span className="ui-cur">$</span>
+          <input
+            className="ui-amount"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            placeholder="0"
+            aria-label="Monto"
+            value={f.monto || ''}
+            onChange={e => up({ monto: Number(e.target.value) })}
+          />
+        </label>
 
         <Field label="Descripción">
           <input
@@ -921,27 +779,28 @@ export function MovModal({
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Monto">
-            <input
-              className={inp}
-              type="number"
-              min={0}
-              value={f.monto || ''}
-              onChange={e =>
-                up({ monto: Number(e.target.value) })
-              }
-            />
-          </Field>
-
           <Field label="Fecha">
             <input
               className={inp}
               type="date"
               value={f.fecha}
-              onChange={e =>
-                up({ fecha: e.target.value })
-              }
+              onChange={e => up({ fecha: e.target.value })}
             />
+          </Field>
+
+          <Field label="Cartera (opcional)">
+            <select
+              className={inp}
+              value={f.cartera ?? ''}
+              onChange={e => up({ cartera: e.target.value || undefined })}
+            >
+              <option value="">Sin cartera</option>
+              {s.carts.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre}
+                </option>
+              ))}
+            </select>
           </Field>
         </div>
 
@@ -949,59 +808,19 @@ export function MovModal({
           <select
             className={inp}
             value={f.cat}
-            onChange={e =>
-              up({ cat: e.target.value })
-            }
+            onChange={e => up({ cat: e.target.value })}
           >
-            {!s.cats.includes(f.cat) && f.cat && (
-              <option>{f.cat}</option>
-            )}
-
+            {!s.cats.includes(f.cat) && f.cat && <option>{f.cat}</option>}
             {s.cats.map(c => (
               <option key={c}>{c}</option>
             ))}
           </select>
         </Field>
 
-        <Field label="Cartera (opcional)">
-          <select
-            className={inp}
-            value={f.cartera ?? ''}
-            onChange={e =>
-              up({
-                cartera: e.target.value || undefined,
-              })
-            }
-          >
-            <option value="">Sin cartera</option>
-
-            {s.carts.map(c => (
-              <option
-                key={c.id}
-                value={c.id}
-              >
-                {c.nombre}
-              </option>
-            ))}
-          </select>
-        </Field>
-
         <button
           disabled={!ok}
-          className={`
-            ${btn}
-            w-full
-            justify-center
-            disabled:cursor-not-allowed
-            disabled:opacity-40
-            disabled:shadow-none
-          `}
-          onClick={() =>
-            onSave({
-              ...f,
-              desc: f.desc.trim(),
-            })
-          }
+          className={`${btn} w-full justify-center`}
+          onClick={() => onSave({ ...f, desc: f.desc.trim() })}
         >
           Guardar
         </button>
@@ -1009,6 +828,8 @@ export function MovModal({
     </Modal>
   )
 }
+
+// ──────────────────────────────── Movimientos ────────────────────────────────
 
 export function Movimientos({ s }: { s: Store }) {
   const [q, setQ] = useState('')
@@ -1018,6 +839,7 @@ export function Movimientos({ s }: { s: Store }) {
   const [modoFecha, setModoFecha] = useState<'ninguno' | 'dia' | 'rango'>('ninguno')
   const [fechaDesde, setFechaDesde] = useState('')
   const [fechaHasta, setFechaHasta] = useState('')
+  const [abierto, setAbierto] = useState<string | null>(null)
 
   const list = sorted(s.movs).filter(
     m =>
@@ -1032,117 +854,162 @@ export function Movimientos({ s }: { s: Store }) {
         (modoFecha === 'dia'
           ? !!fechaDesde && m.fecha.slice(0, 10) === fechaDesde
           : (!fechaDesde || m.fecha.slice(0, 10) >= fechaDesde) &&
-            (!fechaHasta || m.fecha.slice(0, 10) <= fechaHasta) &&
-            (!!fechaDesde || !!fechaHasta)))
+          (!fechaHasta || m.fecha.slice(0, 10) <= fechaHasta) &&
+          (!!fechaDesde || !!fechaHasta)))
   )
 
   const ingresosFiltrados = sum(list, 'ingreso')
   const gastosFiltrados = sum(list, 'gasto')
   const balanceFiltrado = ingresosFiltrados - gastosFiltrados
+  const filtrado = list.length !== s.movs.length
+
+  const cambiarModoFecha = (nuevoModo: typeof modoFecha) => {
+    setModoFecha(nuevoModo)
+    if (nuevoModo === 'ninguno') {
+      setFechaDesde('')
+      setFechaHasta('')
+    }
+  }
+
+  const eliminar = (m: Mov) =>
+    s.showAlert({
+      title: 'Eliminar movimiento',
+      message:
+        '¿Estás seguro de que quieres eliminar este movimiento? Esta acción no se puede deshacer.',
+      variant: 'danger',
+      confirmText: 'Eliminar',
+      onConfirm: async () => {
+        try {
+          await deleteMovimiento(m.id)
+          s.setMovs(s.movs.filter(x => x.id !== m.id))
+        } catch (error) {
+          console.error('Error eliminando movimiento:', error)
+          s.showAlert({
+            title: 'Error',
+            message: 'No se pudo eliminar el movimiento de Supabase.',
+            variant: 'danger',
+            confirmText: 'Entendido',
+          })
+        }
+      },
+    })
+
+  // list ya viene ordenada por fecha descendente: los días quedan contiguos.
+  const grupos: { fecha: string; items: Mov[] }[] = []
+  list.forEach(m => {
+    const f = m.fecha.slice(0, 10)
+    const ultimo = grupos[grupos.length - 1]
+    if (ultimo && ultimo.fecha === f) ultimo.items.push(m)
+    else grupos.push({ fecha: f, items: [m] })
+  })
 
   return (
-    <div>
-      <Title
-        right={
-          <button
-            className={btn}
-            onClick={() => s.openMov()}
-          >
-            <Plus size={16} />
-            Nuevo
-          </button>
-        }
-      >
-        Movimientos
-      </Title>
+    <div className="ui-screen app-view app-view--movimientos">
+      <header className="ui-head">
+        <div>
+          <h1 className="ui-title">Movimientos</h1>
+          <p className="ui-sub">
+            {list.length} {list.length === 1 ? 'movimiento' : 'movimientos'}
+          </p>
+        </div>
+        <button className="ui-cta" onClick={() => s.openMov()}>
+          <Plus size={17} /> Nuevo
+        </button>
+      </header>
 
-      <div
-        className="
-    mb-4
-    grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6
-    rounded-2xl
-    border border-white/[0.06]
-    bg-white/[0.018]
-    p-2
-    shadow-[0_8px_30px_rgba(0,0,0,0.10)]
-    backdrop-blur-xl
-  "
-      >
-        <div className="relative col-span-2 md:col-span-1 xl:col-span-2">
-          <Search
-            size={16}
-            className="absolute left-3 top-3 text-mute"
-          />
+      <div className="ui-sum" aria-live="polite">
+        <div className="ui-card">
+          <small>Ingresos{filtrado ? ' filtrados' : ''}</small>
+          <b style={{ color: 'var(--ui-brand)' }}>{money(ingresosFiltrados)}</b>
+        </div>
+        <div className="ui-card">
+          <small>Egresos{filtrado ? ' filtrados' : ''}</small>
+          <b style={{ color: 'var(--ui-neg)' }}>{money(gastosFiltrados)}</b>
+        </div>
+        <div className="ui-card">
+          <small>Balance{filtrado ? ' filtrado' : ''}</small>
+          <b style={{ color: balanceFiltrado >= 0 ? 'var(--ui-brand)' : 'var(--ui-neg)' }}>
+            {money(balanceFiltrado)}
+          </b>
+        </div>
+      </div>
 
+      <div className="ui-tools">
+        <label className="ui-srch">
+          <Search size={18} />
           <input
-            className={`${inp} pl-9`}
-            placeholder="Buscar…"
+            className="ui-in"
+            placeholder="Buscar movimiento"
+            aria-label="Buscar movimiento"
             value={q}
             onChange={e => setQ(e.target.value)}
           />
+        </label>
+
+        <div className="ui-chips" role="group" aria-label="Filtrar por tipo">
+          {([['', 'Todos'], ['ingreso', 'Ingresos'], ['gasto', 'Gastos']] as const).map(([v, l]) => (
+            <button
+              key={v}
+              type="button"
+              className={`ui-chip ${tipo === v ? 'ui-on' : ''}`}
+              onClick={() => setTipo(v)}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+
+        <div className="ui-chips" role="group" aria-label="Filtrar por categoría">
+          <button
+            type="button"
+            className={`ui-chip ${cat === '' ? 'ui-on' : ''}`}
+            onClick={() => setCat('')}
+          >
+            Todas las categorías
+          </button>
+          {s.cats.map(c => (
+            <button
+              key={c}
+              type="button"
+              className={`ui-chip ${cat === c ? 'ui-on' : ''}`}
+              onClick={() => setCat(c)}
+            >
+              {c}
+            </button>
+          ))}
         </div>
 
         <select
-          className={inp}
-          value={tipo}
-          onChange={e => setTipo(e.target.value)}
-        >
-          <option value="">Todos los tipos</option>
-          <option value="ingreso">Ingresos</option>
-          <option value="gasto">Gastos</option>
-        </select>
-
-        <select
-          className={inp}
-          value={cat}
-          onChange={e => setCat(e.target.value)}
-        >
-          <option value="">Todas las categorías</option>
-
-          {s.cats.map(c => (
-            <option key={c}>{c}</option>
-          ))}
-        </select>
-
-        <select
-          className={inp}
+          className="ui-in ui-select"
+          aria-label="Filtrar por cartera"
           value={cart}
           onChange={e => setCart(e.target.value)}
         >
           <option value="">Todas las carteras</option>
           <option value="none">Sin cartera</option>
-
           {s.carts.map(c => (
-            <option
-              key={c.id}
-              value={c.id}
-            >
+            <option key={c.id} value={c.id}>
               {c.nombre}
             </option>
           ))}
         </select>
 
-        <select
-          className={inp}
-          aria-label="Filtrar por fecha"
-          value={modoFecha}
-          onChange={e => {
-            const nuevoModo = e.target.value as typeof modoFecha
-            setModoFecha(nuevoModo)
-            if (nuevoModo === 'ninguno') {
-              setFechaDesde('')
-              setFechaHasta('')
-            }
-          }}
-        >
-          <option value="ninguno">Todas las fechas</option>
-          <option value="dia">Un día</option>
-          <option value="rango">Rango de fechas</option>
-        </select>
+        <div className="ui-chips" role="group" aria-label="Filtrar por fecha">
+          {([['ninguno', 'Todas las fechas'], ['dia', 'Un día'], ['rango', 'Rango de fechas']] as const).map(([v, l]) => (
+            <button
+              key={v}
+              type="button"
+              className={`ui-chip ${modoFecha === v ? 'ui-on' : ''}`}
+              onClick={() => cambiarModoFecha(v)}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
 
         {modoFecha === 'dia' && (
           <input
-            className={inp}
+            className="ui-in"
             type="date"
             aria-label="Día de los movimientos"
             value={fechaDesde}
@@ -1151,60 +1018,113 @@ export function Movimientos({ s }: { s: Store }) {
         )}
 
         {modoFecha === 'rango' && (
-          <>
-            <input
-              className={inp}
-              type="date"
-              aria-label="Fecha inicial del rango"
-              value={fechaDesde}
-              onChange={e => setFechaDesde(e.target.value)}
-            />
-            <input
-              className={inp}
-              type="date"
-              aria-label="Fecha final del rango"
-              value={fechaHasta}
-              onChange={e => setFechaHasta(e.target.value)}
-            />
-          </>
+          <div className="ui-dates">
+            <label>
+              <span>Desde</span>
+              <input
+                className="ui-in"
+                type="date"
+                aria-label="Fecha inicial del rango"
+                value={fechaDesde}
+                onChange={e => setFechaDesde(e.target.value)}
+              />
+            </label>
+            <label>
+              <span>Hasta</span>
+              <input
+                className="ui-in"
+                type="date"
+                aria-label="Fecha final del rango"
+                value={fechaHasta}
+                onChange={e => setFechaHasta(e.target.value)}
+              />
+            </label>
+          </div>
         )}
       </div>
 
-      <Card className=" !p-2 bg-gradient-to-br from-white/[0.035] via-white/[0.02] to-transparent ">
-        {list.length ? (
-          list.map(m => (
-            <MovRow
-              key={m.id}
-              m={m}
-              s={s}
-              actions
-            />
-          ))
-        ) : (
-          <Empty t="No hay movimientos con esos filtros." />
-        )}
-      </Card>
+      {list.length ? (
+        grupos.map(g => {
+          const neto = g.items.reduce(
+            (a, m) => a + (m.tipo === 'ingreso' ? m.monto : -m.monto),
+            0
+          )
+          return (
+            <section key={g.fecha}>
+              <div className="ui-dayh">
+                <span>{etiquetaDia(g.fecha)}</span>
+                <span>{money(neto)}</span>
+              </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-live="polite">
-        <Card className="!p-4">
-          <p className="text-xs text-mute">Ingresos{list.length !== s.movs.length ? ' filtrados' : ''}</p>
-          <p className="mt-2 text-lg font-semibold text-brand">{money(ingresosFiltrados)}</p>
-        </Card>
-        <Card className="!p-4">
-          <p className="text-xs text-mute">Egresos{list.length !== s.movs.length ? ' filtrados' : ''}</p>
-          <p className="mt-2 text-lg font-semibold text-neg">{money(gastosFiltrados)}</p>
-        </Card>
-        <Card className="!p-4">
-          <p className="text-xs text-mute">Balance{list.length !== s.movs.length ? ' filtrado' : ''}</p>
-          <p className={`mt-2 text-lg font-semibold ${balanceFiltrado >= 0 ? 'text-brand' : 'text-neg'}`}>
-            {money(balanceFiltrado)}
-          </p>
-        </Card>
-      </div>
+              {g.items.map(m => {
+                const ing = m.tipo === 'ingreso'
+                const cartera = s.carts.find(c => c.id === m.cartera)
+                const open = abierto === m.id
+                return (
+                  <div key={m.id} className="ui-row">
+                    <button
+                      type="button"
+                      className="ui-rowbtn"
+                      aria-expanded={open}
+                      onClick={() => setAbierto(open ? null : m.id)}
+                    >
+                      <span className={`ui-ic ${ing ? 'ui-g' : 'ui-r'}`}>
+                        {ing ? <ArrowDownLeft size={18} /> : <ArrowUpRight size={18} />}
+                      </span>
+                      <span className="ui-m">
+                        <span className="ui-t">{m.desc}</span>
+                        <small>
+                          <span className="ui-tag">{m.cat}</span>
+                          {cartera?.nombre ?? 'Sin cartera'}
+                        </small>
+                      </span>
+                      <span className={`ui-amt ${ing ? 'ui-p' : 'ui-n'}`}>
+                        {ing ? '+' : '−'}
+                        {money(m.monto)}
+                      </span>
+                    </button>
+
+                    {open && (
+                      <div className="ui-acts">
+                        <button
+                          type="button"
+                          className="ui-ib"
+                          aria-label="Editar movimiento"
+                          title="Editar"
+                          onClick={() => s.openMov(m)}
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-ib ui-d"
+                          aria-label="Eliminar movimiento"
+                          title="Eliminar"
+                          onClick={() => eliminar(m)}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </section>
+          )
+        })
+      ) : (
+        <div className="ui-card">
+          <div className="ui-empty">
+            <span className="ui-ic ui-y">
+              <Inbox size={20} />
+            </span>
+            No hay movimientos con esos filtros.
+          </div>
+        </div>
+      )}
     </div>
   )
 }
-
 export function TransferModal({
   s,
   onSave,
@@ -1349,12 +1269,18 @@ export function TransferModal({
   )
 }
 
+// ───────────────────────────────── Carteras ─────────────────────────────────
+
 export function Carteras({ s }: { s: Store }) {
   const [edit, setEdit] = useState<Cartera | null>(null)
   const [transferOpen, setTransferOpen] = useState(false)
 
   const isNew =
     edit && !s.carts.some(c => c.id === edit.id)
+
+  const total = s.carts
+    .filter(c => c.incluirEnTotal)
+    .reduce((a, c) => a + s.saldo(c.id), 0)
 
   const save = async () => {
     if (!edit || !edit.nombre.trim()) return
@@ -1367,18 +1293,13 @@ export function Carteras({ s }: { s: Store }) {
           incluirEnTotal: edit.incluirEnTotal,
         })
 
-        s.setCarts([
-          ...s.carts,
-          nueva,
-        ])
+        s.setCarts([...s.carts, nueva])
       } else {
         const actualizada = await updateCartera(edit)
 
         s.setCarts(
           s.carts.map(c =>
-            c.id === actualizada.id
-              ? actualizada
-              : c
+            c.id === actualizada.id ? actualizada : c
           )
         )
       }
@@ -1389,8 +1310,7 @@ export function Carteras({ s }: { s: Store }) {
 
       s.showAlert({
         title: 'Error',
-        message:
-          'No se pudo guardar la cartera en Supabase.',
+        message: 'No se pudo guardar la cartera en Supabase.',
         variant: 'danger',
         confirmText: 'Entendido',
       })
@@ -1411,9 +1331,7 @@ export function Carteras({ s }: { s: Store }) {
 
           s.setMovs(
             s.movs.map(m =>
-              m.cartera === c.id
-                ? { ...m, cartera: undefined }
-                : m
+              m.cartera === c.id ? { ...m, cartera: undefined } : m
             )
           )
 
@@ -1421,40 +1339,26 @@ export function Carteras({ s }: { s: Store }) {
             await deleteTransferencia(c.id)
 
             s.setTransfers(
-              s.transfers.filter(
-                t => t.id !== c.id
-              )
+              s.transfers.filter(t => t.id !== c.id)
             )
           } catch (error) {
-            console.error(
-              'Error eliminando transferencia:',
-              error
-            )
+            console.error('Error eliminando transferencia:', error)
 
             s.showAlert({
               title: 'Error',
-              message:
-                'No se pudo eliminar la transferencia de Supabase.',
+              message: 'No se pudo eliminar la transferencia de Supabase.',
               variant: 'danger',
               confirmText: 'Entendido',
             })
           }
 
-          s.setCarts(
-            s.carts.filter(
-              x => x.id !== c.id
-            )
-          )
+          s.setCarts(s.carts.filter(x => x.id !== c.id))
         } catch (error) {
-          console.error(
-            'Error eliminando cartera:',
-            error
-          )
+          console.error('Error eliminando cartera:', error)
 
           s.showAlert({
             title: 'Error',
-            message:
-              'No se pudo eliminar la cartera de Supabase.',
+            message: 'No se pudo eliminar la cartera de Supabase.',
             variant: 'danger',
             confirmText: 'Entendido',
           })
@@ -1467,9 +1371,7 @@ export function Carteras({ s }: { s: Store }) {
     const saldoOrigen = s.saldo(t.desde)
 
     if (t.monto > saldoOrigen) {
-      const cartera = s.carts.find(
-        c => c.id === t.desde
-      )
+      const cartera = s.carts.find(c => c.id === t.desde)
 
       s.showAlert({
         title: 'Saldo insuficiente',
@@ -1484,370 +1386,205 @@ export function Carteras({ s }: { s: Store }) {
       return
     }
     try {
-      const nueva =
-        await createTransferencia(t)
+      const nueva = await createTransferencia(t)
 
-      s.setTransfers([
-        nueva,
-        ...s.transfers,
-      ])
+      s.setTransfers([nueva, ...s.transfers])
 
       setTransferOpen(false)
     } catch (error) {
-      console.error(
-        'Error creando transferencia:',
-        error
-      )
+      console.error('Error creando transferencia:', error)
 
       s.showAlert({
         title: 'Error',
-        message:
-          'No se pudo guardar la transferencia en Supabase.',
+        message: 'No se pudo guardar la transferencia en Supabase.',
         variant: 'danger',
         confirmText: 'Entendido',
       })
     }
   }
 
-  return (
-    <div>
-      <Title
-        right={
-          <div className="flex gap-2">
-            <button
-              className="
-                inline-flex items-center gap-2
-                rounded-xl
-                border border-white/[0.07]
-                bg-white/[0.025]
-                px-4 py-2.5
-                text-sm font-medium
-                text-mute
-                shadow-[0_8px_20px_rgba(0,0,0,0.08)]
-                backdrop-blur-md
-                transition-all duration-200
-                hover:border-white/[0.11]
-                hover:bg-white/[0.05]
-                hover:text-ink
-                active:scale-[0.98]
-              "
-              onClick={() =>
-                setTransferOpen(true)
-              }
-            >
-              <ArrowLeftRight size={16} />
-              Transferir
-            </button>
+  const toggleIncluir = async (c: Cartera) => {
+    const actualizada = { ...c, incluirEnTotal: !c.incluirEnTotal }
 
-            <button
-              className={btn}
-              onClick={() =>
-                setEdit({
-                  id: '',
-                  nombre: '',
-                  saldoInicial: 0,
-                  incluirEnTotal: true,
-                })
-              }
-            >
-              <Plus size={16} />
-              Nueva
-            </button>
-          </div>
+    try {
+      const resultado = await updateCartera(actualizada)
+
+      s.setCarts(
+        s.carts.map(x => (x.id === resultado.id ? resultado : x))
+      )
+    } catch (error) {
+      console.error('Error actualizando balance:', error)
+
+      s.showAlert({
+        title: 'Error',
+        message: 'No se pudo actualizar la cartera.',
+        variant: 'danger',
+        confirmText: 'Entendido',
+      })
+    }
+  }
+
+  const eliminarTransferencia = (t: Transferencia) => {
+    s.showAlert({
+      title: 'Eliminar transferencia',
+      message:
+        '¿Estás seguro de que quieres eliminar esta transferencia? El saldo de las carteras se actualizará.',
+      variant: 'danger',
+      confirmText: 'Eliminar',
+      onConfirm: async () => {
+        try {
+          await deleteTransferencia(t.id)
+
+          s.setTransfers(s.transfers.filter(x => x.id !== t.id))
+        } catch (error) {
+          console.error('Error eliminando transferencia:', error)
+
+          s.showAlert({
+            title: 'Error',
+            message: 'No se pudo eliminar la transferencia de Supabase.',
+            variant: 'danger',
+            confirmText: 'Entendido',
+          })
         }
-      >
-        Carteras
-      </Title>
+      },
+    })
+  }
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {s.carts.map(c => (
-          <Card
-            key={c.id}
-            className="
-              group
-              bg-gradient-to-br
-              from-brand/[0.035]
-              via-white/[0.02]
-              to-transparent
-              hover:-translate-y-0.5
-              hover:border-white/[0.11]
-              hover:shadow-[0_14px_40px_rgba(0,0,0,0.18)]
-            "
+  return (
+    <div className="ui-screen app-view app-view--carteras">
+      <header className="ui-head">
+        <div>
+          <h1 className="ui-title">Carteras</h1>
+          <p className="ui-sub">Tu dinero, repartido en un vistazo</p>
+        </div>
+        <div className="ui-btns">
+          <button className="ui-ghost" onClick={() => setTransferOpen(true)}>
+            <ArrowLeftRight size={16} /> Transferir
+          </button>
+          <button
+            className="ui-cta"
+            onClick={() =>
+              setEdit({
+                id: '',
+                nombre: '',
+                saldoInicial: 0,
+                incluirEnTotal: true,
+              })
+            }
           >
-            {/* Ambient glow */}
-            <div
-              className="
-                pointer-events-none
-                absolute -right-12 -top-12
-                h-32 w-32
-                rounded-full
-                bg-brand/[0.06]
-                blur-3xl
-                transition-all duration-300
-                group-hover:bg-brand/[0.10]
-              "
-            />
+            <Plus size={17} /> Nueva
+          </button>
+        </div>
+      </header>
 
-            <div className="relative">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-medium uppercase tracking-[0.08em] text-mute">
-                    {c.nombre}
-                  </p>
-
-                  <p className="mt-2 text-2xl font-semibold tracking-tight text-ink">
-                    {money(s.saldo(c.id))}
-                  </p>
-
-                  <p className="mt-1 text-xs text-mute">
-                    Saldo actual
-                  </p>
-                </div>
-
-                <div className="flex opacity-60 transition-opacity duration-200 group-hover:opacity-100">
-                  <IconBtn onClick={() => setEdit(c)}>
-                    <Pencil size={16} />
-                  </IconBtn>
-
-                  <IconBtn onClick={() => remove(c)}>
-                    <Trash2 size={16} />
-                  </IconBtn>
-                </div>
-              </div>
-
-              <div className="mt-5 flex items-center justify-between gap-3">
-                <span
-                  className={`
-                    inline-flex items-center
-                    rounded-lg
-                    px-2.5 py-1
-                    text-[11px] font-medium
-                    ${c.incluirEnTotal
-                      ? 'bg-brand/[0.08] text-brand'
-                      : 'bg-white/[0.04] text-mute'
-                    }
-                  `}
-                >
-                  {c.incluirEnTotal
-                    ? 'Incluida en total'
-                    : 'Fuera del total'}
-                </span>
-
-                <label
-                  className="
-                    flex cursor-pointer
-                    items-center gap-2
-                    text-xs text-mute
-                  "
-                  title="Incluir en balance total"
-                >
-                  <span>Balance</span>
-
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 cursor-pointer accent-[#70d6a5]"
-                    checked={c.incluirEnTotal}
-                    onChange={async e => {
-                      const actualizada = {
-                        ...c,
-                        incluirEnTotal: e.target.checked,
-                      }
-
-                      try {
-                        const resultado =
-                          await updateCartera(actualizada)
-
-                        s.setCarts(
-                          s.carts.map(x =>
-                            x.id === resultado.id
-                              ? resultado
-                              : x
-                          )
-                        )
-                      } catch (error) {
-                        console.error(
-                          'Error actualizando balance:',
-                          error
-                        )
-
-                        s.showAlert({
-                          title: 'Error',
-                          message:
-                            'No se pudo actualizar la cartera.',
-                          variant: 'danger',
-                          confirmText: 'Entendido',
-                        })
-                      }
-                    }}
-                  />
-                </label>
-              </div>
-            </div>
-          </Card>
-        ))}
+      <div className="ui-card ui-tot">
+        <div>
+          <p className="ui-sub" style={{ margin: 0 }}>Total en tu balance</p>
+          <b>{money(total)}</b>
+        </div>
+        <span className="ui-ic ui-g" style={{ width: 46, height: 46 }}>
+          <Target size={20} />
+        </span>
       </div>
 
-      <Card
-        className="
-          mt-6
-          bg-gradient-to-br
-          from-white/[0.035]
-          via-white/[0.02]
-          to-transparent
-        "
-      >
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <h3 className="font-semibold tracking-tight">
-              Últimas transferencias
-            </h3>
+      {s.carts.length ? (
+        <div className="ui-grid">
+          {s.carts.map(c => (
+            <div key={c.id} className="ui-card ui-w">
+              <div className="ui-top">
+                <h3>{c.nombre}</h3>
+                <div style={{ display: 'flex' }}>
+                  <button
+                    type="button"
+                    className="ui-ib"
+                    aria-label={`Editar ${c.nombre}`}
+                    onClick={() => setEdit(c)}
+                  >
+                    <Pencil size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="ui-ib ui-d"
+                    aria-label={`Eliminar ${c.nombre}`}
+                    onClick={() => remove(c)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
 
-            <p className="mt-1 text-xs text-mute">
-              Movimientos entre tus propias carteras
-            </p>
-          </div>
+              <b>{money(s.saldo(c.id))}</b>
+              <small>Saldo actual</small>
 
-          <div
-            className="
-              grid h-9 w-9
-              shrink-0
-              place-items-center
-              rounded-xl
-              bg-brand/[0.07]
-              text-brand
-            "
-          >
-            <ArrowLeftRight size={16} />
+              <div className="ui-sw">
+                <span>{c.incluirEnTotal ? 'Incluida en el balance' : 'Fuera del balance'}</span>
+                <button
+                  type="button"
+                  role="switch"
+                  className="ui-tg"
+                  aria-checked={c.incluirEnTotal}
+                  aria-label={`Incluir ${c.nombre} en el balance total`}
+                  onClick={() => toggleIncluir(c)}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="ui-card">
+          <div className="ui-empty">
+            <span className="ui-ic ui-y"><Inbox size={20} /></span>
+            Todavía no tienes carteras.
           </div>
         </div>
+      )}
 
+      <h2 className="ui-sec">Últimas transferencias</h2>
+      <div className="ui-card" style={{ padding: '6px 16px' }}>
         {s.transfers.length ? (
-          <div className="space-y-1">
-            {s.transfers
-              .slice()
-              .sort((a, b) =>
-                b.fecha.localeCompare(a.fecha)
-              )
-              .slice(0, 8)
-              .map(t => {
-                const desde = s.carts.find(
-                  c => c.id === t.desde
-                )
+          s.transfers
+            .slice()
+            .sort((a, b) => b.fecha.localeCompare(a.fecha))
+            .slice(0, 8)
+            .map(t => {
+              const desde = s.carts.find(c => c.id === t.desde)
+              const hacia = s.carts.find(c => c.id === t.hacia)
 
-                const hacia = s.carts.find(
-                  c => c.id === t.hacia
-                )
-
-                return (
-                  <div
-                    key={t.id}
-                    className="
-                      group
-                      flex items-center gap-3
-                      rounded-xl
-                      border border-transparent
-                      px-3 py-3
-                      transition-all duration-200
-                      hover:border-white/[0.045]
-                      hover:bg-white/[0.025]
-                    "
-                  >
-                    <div
-                      className="
-                        grid h-9 w-9
-                        shrink-0
-                        place-items-center
-                        rounded-xl
-                        bg-brand/[0.08]
-                        text-brand
-                        transition-all duration-200
-                        group-hover:bg-brand/[0.11]
-                      "
-                    >
-                      <ArrowLeftRight size={16} />
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {desde?.nombre ?? 'Cartera eliminada'}
-
-                        <span className="mx-2 text-mute">
-                          →
-                        </span>
-
-                        {hacia?.nombre ?? 'Cartera eliminada'}
-                      </p>
-
-                      <p className="mt-0.5 text-xs text-mute">
-                        {t.fecha}
-                      </p>
-                    </div>
-
-                    <span className="
-                      rounded-lg
-                      bg-white/[0.035]
-                      px-2.5 py-1
-                      text-sm font-semibold
-                    ">
-                      {money(t.monto)}
-                    </span>
-
-                    <div className="opacity-60 transition-opacity group-hover:opacity-100">
-                      <IconBtn
-                        onClick={() => {
-                          s.showAlert({
-                            title: 'Eliminar transferencia',
-                            message:
-                              '¿Estás seguro de que quieres eliminar esta transferencia? El saldo de las carteras se actualizará.',
-                            variant: 'danger',
-                            confirmText: 'Eliminar',
-                            onConfirm: async () => {
-                              try {
-                                await deleteTransferencia(t.id)
-
-                                s.setTransfers(
-                                  s.transfers.filter(
-                                    x => x.id !== t.id
-                                  )
-                                )
-                              } catch (error) {
-                                console.error(
-                                  'Error eliminando transferencia:',
-                                  error
-                                )
-
-                                s.showAlert({
-                                  title: 'Error',
-                                  message:
-                                    'No se pudo eliminar la transferencia de Supabase.',
-                                  variant: 'danger',
-                                  confirmText: 'Entendido',
-                                })
-                              }
-                            },
-                          })
-                        }}
-                      >
-                        <Trash2 size={15} />
-                      </IconBtn>
-                    </div>
+              return (
+                <div key={t.id} className="ui-tr">
+                  <span className="ui-ic ui-g">
+                    <ArrowLeftRight size={16} />
+                  </span>
+                  <div className="ui-m">
+                    <p>
+                      {desde?.nombre ?? 'Cartera eliminada'}
+                      <span style={{ color: 'var(--ui-mute)' }}>→</span>
+                      {hacia?.nombre ?? 'Cartera eliminada'}
+                    </p>
+                    <small>{t.fecha}</small>
                   </div>
-                )
-              })}
-          </div>
+                  <span className="ui-amt">{money(t.monto)}</span>
+                  <button
+                    type="button"
+                    className="ui-ib ui-d"
+                    aria-label="Eliminar transferencia"
+                    onClick={() => eliminarTransferencia(t)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              )
+            })
         ) : (
-          <Empty t="Aún no hay transferencias." />
+          <div className="ui-empty">Aún no hay transferencias.</div>
         )}
-      </Card>
+      </div>
 
       {edit && (
         <Modal
-          title={
-            isNew
-              ? 'Nueva cartera'
-              : 'Editar cartera'
-          }
+          title={isNew ? 'Nueva cartera' : 'Editar cartera'}
           onClose={() => setEdit(null)}
+          position="top"
         >
           <div className="space-y-3">
             <Field label="Nombre">
@@ -1855,10 +1592,7 @@ export function Carteras({ s }: { s: Store }) {
                 className={inp}
                 value={edit.nombre}
                 onChange={e =>
-                  setEdit({
-                    ...edit,
-                    nombre: e.target.value,
-                  })
+                  setEdit({ ...edit, nombre: e.target.value })
                 }
               />
             </Field>
@@ -1869,11 +1603,7 @@ export function Carteras({ s }: { s: Store }) {
                 type="number"
                 value={edit.saldoInicial}
                 onChange={e =>
-                  setEdit({
-                    ...edit,
-                    saldoInicial:
-                      Number(e.target.value),
-                  })
+                  setEdit({ ...edit, saldoInicial: Number(e.target.value) })
                 }
               />
             </Field>
@@ -1884,11 +1614,7 @@ export function Carteras({ s }: { s: Store }) {
                 className="accent-[#70d6a5]"
                 checked={edit.incluirEnTotal}
                 onChange={e =>
-                  setEdit({
-                    ...edit,
-                    incluirEnTotal:
-                      e.target.checked,
-                  })
+                  setEdit({ ...edit, incluirEnTotal: e.target.checked })
                 }
               />
 
@@ -1909,9 +1635,7 @@ export function Carteras({ s }: { s: Store }) {
         <TransferModal
           s={s}
           onSave={saveTransfer}
-          onClose={() =>
-            setTransferOpen(false)
-          }
+          onClose={() => setTransferOpen(false)}
         />
       )}
     </div>
@@ -1924,6 +1648,7 @@ const PERIODS = [
   ['anio', 'Este año'],
   ['todo', 'Todo'],
 ]
+
 
 export function Metas({ s }: { s: Store }) {
   const [edit, setEdit] = useState<Meta | null>(null)
@@ -1951,33 +1676,24 @@ export function Metas({ s }: { s: Store }) {
           carteras: edit.carteras,
         })
 
-        s.setMetas([
-          ...s.metas,
-          nueva,
-        ])
+        s.setMetas([...s.metas, nueva])
       } else {
         const actualizada = await updateMeta(edit)
 
         s.setMetas(
           s.metas.map(m =>
-            m.id === actualizada.id
-              ? actualizada
-              : m
+            m.id === actualizada.id ? actualizada : m
           )
         )
       }
 
       setEdit(null)
     } catch (error) {
-      console.error(
-        'Error guardando meta:',
-        error
-      )
+      console.error('Error guardando meta:', error)
 
       s.showAlert({
         title: 'Error',
-        message:
-          'No se pudo guardar la meta en Supabase.',
+        message: 'No se pudo guardar la meta en Supabase.',
         variant: 'danger',
         confirmText: 'Entendido',
       })
@@ -1995,21 +1711,13 @@ export function Metas({ s }: { s: Store }) {
         try {
           await deleteMeta(meta.id)
 
-          s.setMetas(
-            s.metas.filter(
-              m => m.id !== meta.id
-            )
-          )
+          s.setMetas(s.metas.filter(m => m.id !== meta.id))
         } catch (error) {
-          console.error(
-            'Error eliminando meta:',
-            error
-          )
+          console.error('Error eliminando meta:', error)
 
           s.showAlert({
             title: 'Error',
-            message:
-              'No se pudo eliminar la meta de Supabase.',
+            message: 'No se pudo eliminar la meta de Supabase.',
             variant: 'danger',
             confirmText: 'Entendido',
           })
@@ -2020,377 +1728,160 @@ export function Metas({ s }: { s: Store }) {
 
   const getSaved = (meta: Meta) => {
     const saldoCarteras = meta.carteras.reduce(
-      (total, carteraId) =>
-        total + s.saldo(carteraId),
+      (total, carteraId) => total + s.saldo(carteraId),
       0
     )
 
-    return Math.max(
-      0,
-      meta.aporteManual + saldoCarteras
-    )
+    return Math.max(0, meta.aporteManual + saldoCarteras)
   }
 
   const getCarterasNombres = (meta: Meta) => {
     return meta.carteras
-      .map(id =>
-        s.carts.find(c => c.id === id)?.nombre
-      )
+      .map(id => s.carts.find(c => c.id === id)?.nombre)
       .filter(Boolean)
   }
 
   const toggleCartera = (carteraId: string) => {
     if (!edit) return
 
-    const seleccionada =
-      edit.carteras.includes(carteraId)
+    const seleccionada = edit.carteras.includes(carteraId)
 
     setEdit({
       ...edit,
       carteras: seleccionada
-        ? edit.carteras.filter(
-          id => id !== carteraId
-        )
-        : [
-          ...edit.carteras,
-          carteraId,
-        ],
+        ? edit.carteras.filter(id => id !== carteraId)
+        : [...edit.carteras, carteraId],
     })
   }
 
+  const RING = 2 * Math.PI * 34
+
   return (
-    <div>
-      <Title
-        right={
-          <button
-            className={btn}
-            onClick={() =>
-              setEdit({
-                id: uid(),
-                nombre: '',
-                objetivo: 0,
-                aporteManual: 0,
-                carteras: [],
-              })
-            }
-          >
-            <Plus size={16} />
-            Nueva meta
-          </button>
-        }
-      >
-        Metas
-      </Title>
+    <div className="ui-screen app-view app-view--metas">
+      <header className="ui-head">
+        <div>
+          <h1 className="ui-title">Metas</h1>
+          <p className="ui-sub">Lo que estás construyendo, paso a paso</p>
+        </div>
+        <button
+          className="ui-cta"
+          onClick={() =>
+            setEdit({
+              id: uid(),
+              nombre: '',
+              objetivo: 0,
+              aporteManual: 0,
+              carteras: [],
+            })
+          }
+        >
+          <Plus size={17} /> Nueva meta
+        </button>
+      </header>
 
       {!s.metas.length ? (
-        <Card
-          className="
-            bg-gradient-to-br
-            from-brand/[0.035]
-            via-white/[0.02]
-            to-transparent
-          "
-        >
-          <div className="relative py-10 text-center">
-            <div
-              className="
-                pointer-events-none
-                absolute left-1/2 top-1/2
-                h-32 w-32
-                -translate-x-1/2 -translate-y-1/2
-                rounded-full
-                bg-brand/[0.05]
-                blur-3xl
-              "
-            />
-
-            <div
-              className="
-                relative
-                mx-auto mb-4
-                grid h-14 w-14
-                place-items-center
-                rounded-2xl
-                border border-brand/[0.10]
-                bg-brand/[0.08]
-                text-brand
-                shadow-[0_0_25px_rgba(112,214,165,0.08)]
-              "
-            >
+        <div className="ui-card">
+          <div className="ui-empty">
+            <span className="ui-ic ui-g" style={{ width: 56, height: 56, borderRadius: 18 }}>
               <Target size={24} />
-            </div>
-
-            <h3 className="font-semibold tracking-tight">
+            </span>
+            <b style={{ color: 'var(--ui-ink)', fontFamily: 'var(--ui-display)', fontSize: 17 }}>
               Aún no tienes metas
-            </h3>
-
-            <p className="mx-auto mt-1.5 max-w-sm text-sm leading-relaxed text-mute">
-              Crea una meta para empezar a
-              seguir tus ahorros y acercarte
-              a tus objetivos.
-            </p>
+            </b>
+            Crea una meta para empezar a seguir tus ahorros y acercarte a tus objetivos.
           </div>
-        </Card>
+        </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="ui-grid">
           {s.metas.map(meta => {
             const saved = getSaved(meta)
-
             const percent =
               meta.objetivo > 0
-                ? Math.min(
-                  100,
-                  (saved / meta.objetivo) * 100
-                )
+                ? Math.min(100, (saved / meta.objetivo) * 100)
                 : 0
-
-            const nombresCarteras =
-              getCarterasNombres(meta)
-
-            const reached =
-              saved >= meta.objetivo
+            const nombresCarteras = getCarterasNombres(meta)
+            const reached = saved >= meta.objetivo
+            const desdeCarteras = meta.carteras.reduce(
+              (total, id) => total + s.saldo(id),
+              0
+            )
 
             return (
-              <Card
+              <div
                 key={meta.id}
-                className={`
-                  group
-                  bg-gradient-to-br
-                  ${reached
-                    ? 'from-brand/[0.055]'
-                    : 'from-white/[0.035]'
-                  }
-                  via-white/[0.02]
-                  to-transparent
-                  hover:-translate-y-0.5
-                  hover:border-white/[0.11]
-                  hover:shadow-[0_14px_40px_rgba(0,0,0,0.18)]
-                `}
+                className="ui-card"
+                style={reached ? { background: 'linear-gradient(150deg,#12231a,var(--ui-surface) 70%)' } : undefined}
               >
-                <div
-                  className={`
-                    pointer-events-none
-                    absolute -right-12 -top-12
-                    h-32 w-32
-                    rounded-full
-                    blur-3xl
-                    transition-all duration-300
-                    ${reached
-                      ? 'bg-brand/[0.10] group-hover:bg-brand/[0.14]'
-                      : 'bg-brand/[0.045] group-hover:bg-brand/[0.075]'
-                    }
-                  `}
-                />
+                <div className="ui-mt">
+                  <div
+                    className="ui-ring"
+                    style={{ '--c': RING, '--o': RING * (1 - percent / 100) } as React.CSSProperties}
+                  >
+                    <svg viewBox="0 0 84 84" aria-hidden="true">
+                      <circle className="ui-ring-bg" cx="42" cy="42" r="34" />
+                      <circle className="ui-ring-fg" cx="42" cy="42" r="34" strokeDasharray={RING} />
+                    </svg>
+                    <div>{Math.round(percent)}%</div>
+                  </div>
 
-                <div className="relative">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          className="
-                            grid h-9 w-9
-                            shrink-0
-                            place-items-center
-                            rounded-xl
-                            border border-brand/[0.08]
-                            bg-brand/[0.08]
-                            text-brand
-                            transition-all duration-200
-                            group-hover:bg-brand/[0.11]
-                          "
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                      <h3>{meta.nombre}</h3>
+                      <div style={{ display: 'flex', margin: '-6px -8px 0 0' }}>
+                        <button
+                          type="button"
+                          className="ui-ib"
+                          aria-label={`Editar ${meta.nombre}`}
+                          onClick={() => setEdit(meta)}
                         >
-                          <Target size={17} />
-                        </span>
-
-                        <div className="min-w-0">
-                          <h3 className="truncate font-semibold tracking-tight">
-                            {meta.nombre}
-                          </h3>
-
-                          <p className="mt-0.5 text-[11px] text-mute">
-                            {nombresCarteras.length
-                              ? `${nombresCarteras.length} ${nombresCarteras.length === 1
-                                ? 'cartera vinculada'
-                                : 'carteras vinculadas'
-                              }`
-                              : 'Ahorro independiente'}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div
-                      className="
-                        flex
-                        opacity-60
-                        transition-opacity duration-200
-                        group-hover:opacity-100
-                      "
-                    >
-                      <IconBtn
-                        onClick={() =>
-                          setEdit(meta)
-                        }
-                      >
-                        <Pencil size={16} />
-                      </IconBtn>
-
-                      <IconBtn
-                        onClick={() =>
-                          remove(meta)
-                        }
-                      >
-                        <Trash2 size={16} />
-                      </IconBtn>
-                    </div>
-                  </div>
-
-                  <div className="mt-6">
-                    <div className="flex items-end justify-between gap-3">
-                      <div>
-                        <p className="text-2xl font-semibold tracking-tight text-brand">
-                          {money(saved)}
-                        </p>
-
-                        <p className="mt-1 text-xs text-mute">
-                          de {money(meta.objetivo)}
-                        </p>
-                      </div>
-
-                      <div
-                        className={`
-                          rounded-lg
-                          px-2.5 py-1
-                          text-sm font-semibold
-                          ${reached
-                            ? 'bg-brand/[0.09] text-brand'
-                            : 'bg-white/[0.04] text-mute'
-                          }
-                        `}
-                      >
-                        {percent.toFixed(1)}%
-                      </div>
-                    </div>
-
-                    <div
-                      className="
-                        mt-4
-                        h-2.5
-                        overflow-hidden
-                        rounded-full
-                        border border-white/[0.03]
-                        bg-white/[0.055]
-                      "
-                    >
-                      <div
-                        className="
-                          h-full
-                          rounded-full
-                          bg-brand
-                          shadow-[0_0_14px_rgba(112,214,165,0.24)]
-                          transition-all duration-500
-                        "
-                        style={{
-                          width: `${percent}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid grid-cols-2 gap-2">
-                    <div
-                      className="
-                        rounded-xl
-                        border border-white/[0.045]
-                        bg-white/[0.022]
-                        p-3
-                        transition-colors duration-200
-                        group-hover:border-white/[0.06]
-                      "
-                    >
-                      <p className="text-[11px] text-mute">
-                        Aportes manuales
-                      </p>
-
-                      <p className="mt-1 text-sm font-semibold">
-                        {money(meta.aporteManual)}
-                      </p>
-                    </div>
-
-                    <div
-                      className="
-                        rounded-xl
-                        border border-white/[0.045]
-                        bg-white/[0.022]
-                        p-3
-                        transition-colors duration-200
-                        group-hover:border-white/[0.06]
-                      "
-                    >
-                      <p className="text-[11px] text-mute">
-                        Desde carteras
-                      </p>
-
-                      <p className="mt-1 text-sm font-semibold">
-                        {money(
-                          meta.carteras.reduce(
-                            (total, id) =>
-                              total + s.saldo(id),
-                            0
-                          )
-                        )}
-                      </p>
-                    </div>
-                  </div>
-
-                  {nombresCarteras.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {nombresCarteras.map(nombre => (
-                        <span
-                          key={nombre}
-                          className="
-                            rounded-lg
-                            border border-brand/[0.08]
-                            bg-brand/[0.045]
-                            px-2 py-1
-                            text-[11px]
-                            text-brand/80
-                          "
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-ib ui-d"
+                          aria-label={`Eliminar ${meta.nombre}`}
+                          onClick={() => remove(meta)}
                         >
-                          {nombre}
-                        </span>
-                      ))}
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </div>
-                  )}
-
-                  {nombresCarteras.length > 0 && (
-                    <p className="mt-3 text-xs leading-relaxed text-mute">
-                      La meta incluye automáticamente
-                      el saldo actual de las carteras
-                      seleccionadas.
-                    </p>
-                  )}
-
-                  {reached && (
-                    <div
-                      className="
-                        mt-4
-                        flex items-center gap-2
-                        rounded-xl
-                        border border-brand/[0.15]
-                        bg-brand/[0.06]
-                        px-3 py-2.5
-                        text-xs font-medium
-                        text-brand
-                        shadow-[0_0_18px_rgba(112,214,165,0.04)]
-                      "
-                    >
-                      <Check size={14} />
-                      Meta alcanzada
-                    </div>
-                  )}
+                    <p className="ui-big">{money(saved)}</p>
+                    <small style={{ color: 'var(--ui-mute)', fontSize: 12 }}>
+                      de {money(meta.objetivo)}
+                    </small>
+                  </div>
                 </div>
-              </Card>
+
+                <div className="ui-two">
+                  <div>
+                    <small>Aportes manuales</small>
+                    <b>{money(meta.aporteManual)}</b>
+                  </div>
+                  <div>
+                    <small>Desde carteras</small>
+                    <b>{money(desdeCarteras)}</b>
+                  </div>
+                </div>
+
+                {nombresCarteras.length > 0 && (
+                  <div className="ui-wl">
+                    {nombresCarteras.map(nombre => (
+                      <span key={nombre}>{nombre}</span>
+                    ))}
+                  </div>
+                )}
+
+                {reached ? (
+                  <span className="ui-pill">
+                    <Check size={14} /> Meta alcanzada
+                  </span>
+                ) : (
+                  <p className="ui-left">
+                    Faltan <b>{money(Math.max(0, meta.objetivo - saved))}</b>
+                  </p>
+                )}
+              </div>
             )
           })}
         </div>
@@ -2398,14 +1889,9 @@ export function Metas({ s }: { s: Store }) {
 
       {edit && (
         <Modal
-          title={
-            isNew
-              ? 'Nueva meta'
-              : 'Editar meta'
-          }
-          onClose={() =>
-            setEdit(null)
-          }
+          title={isNew ? 'Nueva meta' : 'Editar meta'}
+          onClose={() => setEdit(null)}
+          position="lower"
         >
           <div className="space-y-3">
             <Field label="Nombre">
@@ -2414,10 +1900,7 @@ export function Metas({ s }: { s: Store }) {
                 placeholder="Ej. Moto"
                 value={edit.nombre}
                 onChange={e =>
-                  setEdit({
-                    ...edit,
-                    nombre: e.target.value,
-                  })
+                  setEdit({ ...edit, nombre: e.target.value })
                 }
               />
             </Field>
@@ -2427,15 +1910,9 @@ export function Metas({ s }: { s: Store }) {
                 className={inp}
                 type="number"
                 min={0}
-                value={
-                  edit.objetivo || ''
-                }
+                value={edit.objetivo || ''}
                 onChange={e =>
-                  setEdit({
-                    ...edit,
-                    objetivo:
-                      Number(e.target.value),
-                  })
+                  setEdit({ ...edit, objetivo: Number(e.target.value) })
                 }
               />
             </Field>
@@ -2445,15 +1922,9 @@ export function Metas({ s }: { s: Store }) {
                 className={inp}
                 type="number"
                 min={0}
-                value={
-                  edit.aporteManual || ''
-                }
+                value={edit.aporteManual || ''}
                 onChange={e =>
-                  setEdit({
-                    ...edit,
-                    aporteManual:
-                      Number(e.target.value),
-                  })
+                  setEdit({ ...edit, aporteManual: Number(e.target.value) })
                 }
               />
 
@@ -2478,16 +1949,13 @@ export function Metas({ s }: { s: Store }) {
               >
                 {s.carts.length ? (
                   s.carts.map(c => {
-                    const checked =
-                      edit.carteras.includes(c.id)
+                    const checked = edit.carteras.includes(c.id)
 
                     return (
                       <button
                         key={c.id}
                         type="button"
-                        onClick={() =>
-                          toggleCartera(c.id)
-                        }
+                        onClick={() => toggleCartera(c.id)}
                         className={`
                           flex w-full
                           items-center
@@ -2527,9 +1995,7 @@ export function Metas({ s }: { s: Store }) {
                             }
                           `}
                         >
-                          {checked && (
-                            <Check size={13} />
-                          )}
+                          {checked && <Check size={13} />}
                         </span>
                       </button>
                     )
@@ -2564,9 +2030,7 @@ export function Metas({ s }: { s: Store }) {
                 {money(
                   edit.aporteManual +
                   edit.carteras.reduce(
-                    (total, carteraId) =>
-                      total +
-                      s.saldo(carteraId),
+                    (total, carteraId) => total + s.saldo(carteraId),
                     0
                   )
                 )}
@@ -2594,6 +2058,7 @@ export function Metas({ s }: { s: Store }) {
     </div>
   )
 }
+
 
 export function Analisis({ s }: { s: Store }) {
   const [p, setP] = useState('mes')
@@ -2664,237 +2129,128 @@ export function Analisis({ s }: { s: Store }) {
   ]
 
   return (
-    <div className="space-y-6">
-      <Title
-        right={
-          <div
-            className="
-              rounded-xl
-              border border-white/[0.06]
-              bg-white/[0.018]
-              p-1
-              shadow-[0_8px_24px_rgba(0,0,0,0.10)]
-              backdrop-blur-xl
-            "
+    <div className="ui-screen app-view app-view--analisis">
+      <header className="ui-head">
+        <div>
+          <h1 className="ui-title">Análisis</h1>
+          <p className="ui-sub">
+            {PERIODS.find(([v]) => v === p)?.[1]}
+          </p>
+        </div>
+      </header>
+
+      <div className="ui-chips ui-per" role="group" aria-label="Período">
+        {PERIODS.map(([v, l]) => (
+          <button
+            key={v}
+            type="button"
+            className={`ui-chip ${p === v ? 'ui-on' : ''}`}
+            onClick={() => setP(v)}
           >
-            <select
-              className="
-                !w-auto
-                rounded-lg
-                border-0
-                bg-transparent
-                px-3 py-1.5
-                text-sm
-                text-ink
-                outline-none
-                focus:ring-0
-              "
-              value={p}
-              onChange={e => setP(e.target.value)}
-            >
-              {PERIODS.map(([v, l]) => (
-                <option
-                  key={v}
-                  value={v}
-                >
-                  {l}
-                </option>
-              ))}
-            </select>
-          </div>
-        }
-      >
-        Análisis
-      </Title>
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {stats.map(([l, v, c], index) => (
-          <Card
-            key={l}
-            className={`
-              !p-4
-              bg-gradient-to-br
-              ${index === 0
-                ? 'from-brand/[0.045] via-white/[0.02] to-transparent'
-                : index === 1
-                  ? 'from-neg/[0.04] via-white/[0.02] to-transparent'
-                  : 'from-white/[0.035] via-white/[0.02] to-transparent'
-              }
-              hover:-translate-y-0.5
-              hover:shadow-[0_12px_32px_rgba(0,0,0,0.14)]
-            `}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-medium text-mute">
-                {l}
-              </p>
-
-              <span
-                className={`
-                  h-1.5 w-1.5
-                  rounded-full
-                  ${l === 'Ingresos'
-                    ? 'bg-brand shadow-[0_0_8px_rgba(112,214,165,0.35)]'
-                    : l === 'Gastos'
-                      ? 'bg-neg shadow-[0_0_8px_rgba(255,123,123,0.30)]'
-                      : 'bg-white/[0.30]'
-                  }
-                `}
-              />
-            </div>
-
-            <p
-              className={`mt-2 text-xl font-semibold tracking-tight ${c}`}
-            >
-              {v}
-            </p>
-          </Card>
+            {l}
+          </button>
         ))}
       </div>
 
-      <Card
-        className="
-          bg-gradient-to-br
-          from-white/[0.035]
-          via-white/[0.02]
-          to-transparent
-        "
-      >
-        <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="ui-stats" aria-live="polite">
+        {stats.map(([l, v, c], index) => (
+          <div key={l} className={`ui-card ${index === 2 ? 'ui-main' : ''}`}>
+            <small>{l}</small>
+            <b className={c}>{v}</b>
+          </div>
+        ))}
+      </div>
+
+      <div className="ui-card ui-panel">
+        <div className="ui-ph">
           <div>
-            <h3 className="font-semibold tracking-tight">
-              Gastos por categoría
-            </h3>
-
-            <p className="mt-1 text-xs text-mute">
-              Distribución de tus gastos en el período seleccionado
-            </p>
+            <h3>Gastos por categoría</h3>
+            <p className="ui-sub">Distribución en el período seleccionado</p>
           </div>
-
-          <div
-            className="
-              grid h-9 w-9
-              shrink-0
-              place-items-center
-              rounded-xl
-              bg-neg/[0.07]
-              text-neg
-            "
-          >
-            <Target size={16} />
-          </div>
+          <span className="ui-ic ui-r">
+            <Target size={18} />
+          </span>
         </div>
 
         <CatChart ms={ms} />
-      </Card>
+      </div>
 
-      <Card
-        className="
-          bg-gradient-to-br
-          from-white/[0.035]
-          via-white/[0.02]
-          to-transparent
-        "
-      >
-        <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="ui-card ui-panel">
+        <div className="ui-ph">
           <div>
-            <h3 className="font-semibold tracking-tight">
-              Evolución de ingresos y gastos
-            </h3>
-
-            <p className="mt-1 text-xs text-mute">
-              Comparación de tus movimientos a lo largo del período
-            </p>
+            <h3>Ingresos y gastos</h3>
+            <p className="ui-sub">Comparación a lo largo del período</p>
           </div>
 
-          <div
-            className="
-              hidden
-              items-center gap-3
-              text-[11px] text-mute
-              sm:flex
-            "
-          >
-            <span className="flex items-center gap-1.5">
-              <i className="h-2 w-2 rounded-full bg-brand" />
-              Ingresos
-            </span>
-
-            <span className="flex items-center gap-1.5">
-              <i className="h-2 w-2 rounded-full bg-neg" />
-              Gastos
-            </span>
+          <div className="ui-key">
+            <span><i style={{ background: 'var(--ui-brand)' }} />Ingresos</span>
+            <span><i style={{ background: 'var(--ui-neg)' }} />Gastos</span>
           </div>
         </div>
 
         {data.length ? (
-          <div
-            className="
-              rounded-xl
-              border border-white/[0.035]
-              bg-white/[0.012]
-              p-2
-            "
-          >
-            <div className="h-64">
-              <ResponsiveContainer>
-                <BarChart data={data}>
-                  <CartesianGrid
-                    stroke="#ffffff0d"
-                    strokeDasharray="3 6"
-                    vertical={false}
-                  />
+          <div className="h-64">
+            <ResponsiveContainer>
+              <BarChart data={data}>
+                <CartesianGrid
+                  stroke="#ffffff0d"
+                  strokeDasharray="3 6"
+                  vertical={false}
+                />
 
-                  <XAxis
-                    dataKey="k"
-                    stroke="#8b9691"
-                    fontSize={12}
-                    tickLine={false}
-                    axisLine={false}
-                    tickMargin={8}
-                  />
+                <XAxis
+                  dataKey="k"
+                  stroke="#8b9691"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                />
 
-                  <YAxis
-                    stroke="#8b9691"
-                    fontSize={12}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={v =>
-                      `${v / 1000}k`
-                    }
-                  />
+                <YAxis
+                  stroke="#8b9691"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={v =>
+                    `${v / 1000}k`
+                  }
+                />
 
-                  <Tooltip
-                    {...tip}
-                    cursor={{
-                      fill: '#ffffff08',
-                    }}
-                  />
+                <Tooltip
+                  {...tip}
+                  cursor={{
+                    fill: '#ffffff08',
+                  }}
+                />
 
-                  <Bar
-                    dataKey="Ingresos"
-                    fill="#70d6a5"
-                    radius={[6, 6, 0, 0]}
-                    maxBarSize={28}
-                  />
+                <Bar
+                  dataKey="Ingresos"
+                  fill="#70d6a5"
+                  radius={[6, 6, 0, 0]}
+                  maxBarSize={28}
+                />
 
-                  <Bar
-                    dataKey="Gastos"
-                    fill="#ff7b7b"
-                    radius={[6, 6, 0, 0]}
-                    maxBarSize={28}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+                <Bar
+                  dataKey="Gastos"
+                  fill="#ff7b7b"
+                  radius={[6, 6, 0, 0]}
+                  maxBarSize={28}
+                />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         ) : (
-          <Empty t="No hay movimientos en este período." />
+          <div className="ui-empty">
+            <span className="ui-ic ui-y"><Inbox size={20} /></span>
+            No hay movimientos en este período.
+          </div>
         )}
-      </Card>
+      </div>
     </div>
   )
 }
+
 
 export function Config({ s }: { s: Store }) {
   const [n, setN] = useState('')
@@ -3031,7 +2387,7 @@ export function Config({ s }: { s: Store }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="app-view app-view--config space-y-6">
       <Title>Configuración</Title>
 
       <Card>
@@ -3200,6 +2556,7 @@ export function Config({ s }: { s: Store }) {
 
 }
 
+
 export function Tareas({ s }: { s: Store }) {
   const [titulo, setTitulo] = useState('')
   const [descripcion, setDescripcion] = useState('')
@@ -3327,10 +2684,11 @@ export function Tareas({ s }: { s: Store }) {
     })
   }
 
+  // Solo presentación: clases de las etiquetas de prioridad
   const prioridadStyle = {
-    baja: 'bg-[#7bb6ff]/[0.08] text-[#7bb6ff]',
-    media: 'bg-[#ffd27b]/[0.08] text-[#ffd27b]',
-    alta: 'bg-neg/[0.08] text-neg',
+    baja: 'ui-pr-baja',
+    media: 'ui-pr-media',
+    alta: 'ui-pr-alta',
   }
 
   const prioridadLabel = {
@@ -3350,468 +2708,190 @@ export function Tareas({ s }: { s: Store }) {
     return `${day}/${month}/${year}`
   }
 
-  return (
-    <section className="space-y-6">
+  const fila = (tarea: Tarea) => {
+    const hecha = tarea.completada
 
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight md:text-[28px]">Tareas</h1>
-        <p className="mt-1 text-sm text-mute">Organiza tus pendientes</p>
+    return (
+      <div key={tarea.id} className={`ui-task${hecha ? ' ui-done' : ''}`}>
+        <button
+          type="button"
+          className="ui-ck"
+          onClick={() => cambiarEstado(tarea)}
+          title={hecha ? 'Marcar como pendiente' : 'Marcar como completada'}
+          aria-label={hecha ? 'Marcar como pendiente' : 'Marcar como completada'}
+        >
+          <Check size={14} strokeWidth={3.4} />
+        </button>
+
+        <div className="ui-tb">
+          <div className="ui-tt">
+            <p>{tarea.titulo}</p>
+            {!hecha && (
+              <span className={`ui-pr ${prioridadStyle[tarea.prioridad]}`}>
+                {prioridadLabel[tarea.prioridad]}
+              </span>
+            )}
+          </div>
+
+          {!hecha && tarea.descripcion && (
+            <p className="ui-desc">{tarea.descripcion}</p>
+          )}
+
+          {tarea.fecha && (
+            <div className="ui-date">
+              <CalendarDays size={14} />
+              {formatearFecha(tarea.fecha)}
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          className="ui-ib ui-d"
+          onClick={() => eliminar(tarea)}
+          title="Eliminar tarea"
+          aria-label="Eliminar tarea"
+        >
+          <Trash2 size={17} />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="ui-screen app-view app-view--tareas">
+      <header className="ui-head">
+        <div>
+          <h1 className="ui-title">Tareas</h1>
+          <p className="ui-sub">Organiza tus pendientes</p>
+        </div>
+        <button className="ui-cta" onClick={() => setShowForm(true)}>
+          <Plus size={17} /> Nueva tarea
+        </button>
       </header>
 
-      {/* Resumen */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-
-        <Card>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-mute">
-                Pendientes
-              </p>
-
-              <p className="mt-1 text-2xl font-semibold">
-                {pendientes.length}
-              </p>
-            </div>
-
-            <div className="
-              flex h-10 w-10
-              items-center justify-center
-              rounded-xl
-              bg-brand/[0.08]
-              text-brand
-            ">
-              <Circle size={20} />
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-mute">
-                Completadas
-              </p>
-
-              <p className="mt-1 text-2xl font-semibold">
-                {completadas.length}
-              </p>
-            </div>
-
-            <div className="
-              flex h-10 w-10
-              items-center justify-center
-              rounded-xl
-              bg-brand/[0.08]
-              text-brand
-            ">
-              <CheckCircle2 size={20} />
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-mute">
-                Total
-              </p>
-
-              <p className="mt-1 text-2xl font-semibold">
-                {s.tareas.length}
-              </p>
-            </div>
-
-            <div className="
-              flex h-10 w-10
-              items-center justify-center
-              rounded-xl
-              bg-white/[0.05]
-              text-mute
-            ">
-              <CheckSquare size={20} />
-            </div>
-          </div>
-        </Card>
-
+      <div className="ui-ts">
+        <div className="ui-card">
+          <span className="ui-ic ui-g"><Circle size={17} /></span>
+          <b>{pendientes.length}</b>
+          <small>Pendientes</small>
+        </div>
+        <div className="ui-card">
+          <span className="ui-ic ui-g"><CheckCircle2 size={17} /></span>
+          <b>{completadas.length}</b>
+          <small>Completadas</small>
+        </div>
+        <div className="ui-card">
+          <span className="ui-ic ui-mu"><CheckSquare size={17} /></span>
+          <b>{s.tareas.length}</b>
+          <small>Total</small>
+        </div>
       </div>
 
-      {/* Botón nueva tarea */}
-      {!showForm && (
-        <button
-          onClick={() => setShowForm(true)}
-          className={btn}
-        >
-          <Plus size={18} />
-          Nueva tarea
-        </button>
+      <h2 className="ui-sec" style={{ marginBottom: 2 }}>Pendientes</h2>
+      <p className="ui-sub" style={{ marginTop: 0 }}>
+        {pendientes.length === 0
+          ? 'No tienes tareas pendientes'
+          : `${pendientes.length} ${pendientes.length === 1
+            ? 'tarea pendiente'
+            : 'tareas pendientes'
+          }`}
+      </p>
+
+      {pendientes.length === 0 ? (
+        <div className="ui-card" style={{ marginTop: 10 }}>
+          <div className="ui-empty">
+            <span className="ui-ic ui-y"><Inbox size={20} /></span>
+            No tienes tareas pendientes.
+          </div>
+        </div>
+      ) : (
+        pendientes.map(fila)
       )}
 
-      {/* Formulario */}
+      {completadas.length > 0 && (
+        <>
+          <h2 className="ui-sec" style={{ marginBottom: 2 }}>Completadas</h2>
+          <p className="ui-sub" style={{ marginTop: 0 }}>
+            {completadas.length}{' '}
+            {completadas.length === 1
+              ? 'tarea completada'
+              : 'tareas completadas'}
+          </p>
+          {completadas.map(fila)}
+        </>
+      )}
+
       {showForm && (
-        <Card>
-          <div className="space-y-5">
+        <Modal title="Nueva tarea" onClose={() => setShowForm(false)} position="raised">
+          <div className="space-y-4">
+            <Field label="Título">
+              <input
+                value={titulo}
+                onChange={e => setTitulo(e.target.value)}
+                placeholder="Ej. Estudiar para el examen"
+                className={inp}
+                autoFocus
+              />
+            </Field>
 
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-semibold">
-                  Nueva tarea
-                </h2>
+            <Field label="Descripción">
+              <textarea
+                value={descripcion}
+                onChange={e => setDescripcion(e.target.value)}
+                placeholder="Agrega una descripción opcional..."
+                className={`${inp} min-h-[84px] resize-none`}
+              />
+            </Field>
 
-                <p className="mt-1 text-sm text-mute">
-                  Agrega los detalles de tu pendiente.
-                </p>
-              </div>
+            <Field label="Fecha">
+              <input
+                type="date"
+                value={fecha}
+                onChange={e => setFecha(e.target.value)}
+                className={inp}
+              />
+            </Field>
 
-              <button
-                onClick={() => setShowForm(false)}
-                className="text-mute hover:text-ink"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-
-              <Field label="Título">
-                <input
-                  value={titulo}
-                  onChange={e =>
-                    setTitulo(e.target.value)
-                  }
-                  placeholder="Ej. Estudiar para el examen"
-                  className={inp}
-                  autoFocus
-                />
-              </Field>
-
-              <Field label="Descripción">
-                <textarea
-                  value={descripcion}
-                  onChange={e =>
-                    setDescripcion(e.target.value)
-                  }
-                  placeholder="Agrega una descripción opcional..."
-                  className={`${inp} min-h-[100px] resize-none`}
-                />
-              </Field>
-
-              <div className="
-                grid grid-cols-1
-                gap-4
-                sm:grid-cols-2
-              ">
-
-                <Field label="Fecha">
-                  <input
-                    type="date"
-                    value={fecha}
-                    onChange={e =>
-                      setFecha(e.target.value)
-                    }
-                    className={inp}
-                  />
-                </Field>
-
-                <Field label="Prioridad">
-                  <select
-                    value={prioridad}
-                    onChange={e =>
-                      setPrioridad(
-                        e.target.value as Tarea['prioridad']
-                      )
-                    }
-                    className={inp}
+            <div>
+              <span className="mb-1.5 block text-xs font-medium tracking-wide text-mute">
+                Prioridad
+              </span>
+              <div className="ui-pseg" role="group" aria-label="Prioridad">
+                {(['baja', 'media', 'alta'] as Tarea['prioridad'][]).map(pr => (
+                  <button
+                    key={pr}
+                    type="button"
+                    className={prioridad === pr ? 'ui-on' : ''}
+                    aria-pressed={prioridad === pr}
+                    onClick={() => setPrioridad(pr)}
                   >
-                    <option value="baja">
-                      Baja
-                    </option>
-
-                    <option value="media">
-                      Media
-                    </option>
-
-                    <option value="alta">
-                      Alta
-                    </option>
-                  </select>
-                </Field>
-
+                    {prioridadLabel[pr]}
+                  </button>
+                ))}
               </div>
-
             </div>
 
-            <div className="
-              flex justify-end
-              gap-2
-              border-t border-white/[0.06]
-              pt-4
-            ">
+            <div className="flex gap-2 pt-1">
               <button
+                type="button"
+                className={`${btnGhost} flex-1`}
                 onClick={() => setShowForm(false)}
-                className="
-                  rounded-xl
-                  px-4 py-2.5
-                  text-sm
-                  text-mute
-                  transition
-                  hover:bg-white/[0.04]
-                  hover:text-ink
-                "
               >
                 Cancelar
               </button>
-
               <button
+                type="button"
+                className={`${btn} flex-1 justify-center`}
                 onClick={guardar}
-                className={btn}
               >
-                <Check size={17} />
-                Guardar tarea
+                <Check size={17} /> Guardar tarea
               </button>
             </div>
-
           </div>
-        </Card>
+        </Modal>
       )}
-
-      {/* Pendientes */}
-      <div className="space-y-3">
-
-        <div className="
-          flex items-center
-          justify-between
-        ">
-          <div>
-            <h2 className="font-semibold">
-              Pendientes
-            </h2>
-
-            <p className="mt-1 text-sm text-mute">
-              {pendientes.length === 0
-                ? 'No tienes tareas pendientes'
-                : `${pendientes.length} ${pendientes.length === 1
-                  ? 'tarea pendiente'
-                  : 'tareas pendientes'
-                }`
-              }
-            </p>
-          </div>
-        </div>
-
-        {pendientes.length === 0 ? (
-          <Empty t="No tienes tareas pendientes." />
-        ) : (
-          <div className="space-y-3">
-
-            {pendientes.map(tarea => (
-              <Card key={tarea.id}>
-
-                <div className="
-                  flex
-                  items-start
-                  gap-3
-                ">
-
-                  <button
-                    onClick={() =>
-                      cambiarEstado(tarea)
-                    }
-                    className="
-                      mt-0.5
-                      shrink-0
-                      text-mute
-                      transition
-                      hover:text-brand
-                    "
-                    title="Marcar como completada"
-                  >
-                    <Circle size={22} />
-                  </button>
-
-                  <div className="min-w-0 flex-1">
-
-                    <div className="
-                      flex
-                      flex-wrap
-                      items-start
-                      justify-between
-                      gap-2
-                    ">
-
-                      <p className="
-                        font-medium
-                        text-ink
-                        break-words
-                      ">
-                        {tarea.titulo}
-                      </p>
-
-                      <span className={`
-                        rounded-full
-                        px-2.5 py-1
-                        text-xs
-                        font-medium
-                        ${prioridadStyle[tarea.prioridad]}
-                      `}>
-                        {prioridadLabel[tarea.prioridad]}
-                      </span>
-
-                    </div>
-
-                    {tarea.descripcion && (
-                      <p className="
-                        mt-1.5
-                        text-sm
-                        leading-relaxed
-                        text-mute
-                      ">
-                        {tarea.descripcion}
-                      </p>
-                    )}
-
-                    {tarea.fecha && (
-                      <div className="
-                        mt-3
-                        flex
-                        items-center
-                        gap-2
-                        text-xs
-                        text-mute
-                      ">
-                        <CalendarDays size={14} className="text-brand/70" />
-
-                        <span>
-                          {formatearFecha(tarea.fecha)}
-                        </span>
-                      </div>
-                    )}
-
-                  </div>
-
-                  <button
-                    onClick={() =>
-                      eliminar(tarea)
-                    }
-                    className="
-                      shrink-0
-                      rounded-lg
-                      p-1.5
-                      text-mute
-                      transition
-                      hover:bg-neg/[0.08]
-                      hover:text-neg
-                    "
-                    title="Eliminar tarea"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-
-                </div>
-
-              </Card>
-            ))}
-
-          </div>
-        )}
-
-      </div>
-
-      {/* Completadas */}
-      {completadas.length > 0 && (
-        <div className="space-y-3">
-
-          <div>
-            <h2 className="font-semibold">
-              Completadas
-            </h2>
-
-            <p className="mt-1 text-sm text-mute">
-              {completadas.length} {
-                completadas.length === 1
-                  ? 'tarea completada'
-                  : 'tareas completadas'
-              }
-            </p>
-          </div>
-
-          <div className="space-y-3">
-
-            {completadas.map(tarea => (
-              <Card key={tarea.id}>
-
-                <div className="
-                  flex
-                  items-center
-                  gap-3
-                ">
-
-                  <button
-                    onClick={() =>
-                      cambiarEstado(tarea)
-                    }
-                    className="
-                      shrink-0
-                      text-brand
-                      transition
-                      hover:opacity-70
-                    "
-                    title="Marcar como pendiente"
-                  >
-                    <CheckCircle2 size={22} />
-                  </button>
-
-                  <div className="min-w-0 flex-1">
-
-                    <p className="
-                      text-sm
-                      text-mute
-                      line-through
-                      break-words
-                    ">
-                      {tarea.titulo}
-                    </p>
-
-                    {tarea.fecha && (
-                      <p className="
-                        mt-1
-                        text-xs
-                        text-mute/60
-                      ">
-                        {formatearFecha(tarea.fecha)}
-                      </p>
-                    )}
-
-                  </div>
-
-                  <button
-                    onClick={() =>
-                      eliminar(tarea)
-                    }
-                    className="
-                      shrink-0
-                      rounded-lg
-                      p-1.5
-                      text-mute
-                      transition
-                      hover:bg-neg/[0.08]
-                      hover:text-neg
-                    "
-                    title="Eliminar tarea"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-
-                </div>
-
-              </Card>
-            ))}
-
-          </div>
-
-        </div>
-      )}
-
-    </section>
+    </div>
   )
 }
 
@@ -4023,13 +3103,13 @@ export function Habitos({ s }: { s: Store }) {
   )
 
   return (
-    <section className="space-y-6 md:space-y-8">
+    <section className="app-view app-view--habitos space-y-6 md:space-y-8">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-brand/75">
             Productividad
           </p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight md:text-3xl">
+          <h1 className="app-heading-text mt-2 text-2xl font-semibold tracking-tight md:text-3xl">
             Hábitos
           </h1>
           <p className="mt-1 text-sm text-mute">
@@ -4339,6 +3419,54 @@ export function Habitos({ s }: { s: Store }) {
   )
 }
 
+function FilaMoto({
+  icono,
+  tono,
+  titulo,
+  detalle,
+  monto,
+  montoColor,
+  nota,
+  children,
+}: {
+  icono: ReactNode
+  tono: string
+  titulo: string
+  detalle: ReactNode
+  monto: string
+  montoColor?: string
+  nota?: string
+  children: ReactNode
+}) {
+  const [abierta, setAbierta] = useState(false)
+ 
+  return (
+    <div className="ui-row">
+      <button
+        type="button"
+        className="ui-rowbtn"
+        aria-expanded={abierta}
+        onClick={() => setAbierta(v => !v)}
+      >
+        <span className={`ui-ic ${tono}`}>{icono}</span>
+        <span className="ui-m">
+          <span className="ui-t">{titulo}</span>
+          <small>{detalle}</small>
+        </span>
+        <span className="ui-amt" style={montoColor ? { color: montoColor } : undefined}>
+          {monto}
+        </span>
+      </button>
+ 
+      {abierta && (
+        <>
+          {nota && <p className="ui-note">{nota}</p>}
+          <div className="ui-acts">{children}</div>
+        </>
+      )}
+    </div>
+  )
+}
 
 export function MotoPage({ s }: { s: Store }) {
   const categoriasGasto = ['Combustible', 'Mantenimiento', 'Repuestos', 'Accesorios', 'Lavado', 'Otros']
@@ -4644,177 +3772,172 @@ export function MotoPage({ s }: { s: Store }) {
   )
 
   return (
-    <section className="space-y-6 md:space-y-8">
-      <Card className="relative isolate overflow-hidden !p-0">
-        <div className="relative aspect-video max-h-[520px] overflow-hidden bg-[#101719]">
+    <section className="ui-screen app-view app-view--motopage">
+      <div className="ui-mo-top">
+        <div className="ui-card ui-cover">
           {s.moto?.imagenUrl ? (
-            <img src={s.moto.imagenUrl} alt={motoNombre} className="absolute inset-0 h-full w-full bg-[#101719] object-contain" />
+            <img src={s.moto.imagenUrl} alt={motoNombre} className="ui-cimg" />
           ) : (
-            <div className="absolute inset-0 grid place-items-center bg-[radial-gradient(circle_at_70%_30%,rgba(112,214,165,0.15),transparent_40%),linear-gradient(135deg,#151f20,#0a0d0f)]">
-              <div className="grid h-24 w-24 place-items-center rounded-3xl border border-white/[0.08] bg-black/20 text-brand/70 backdrop-blur">
-                <Bike size={54} strokeWidth={1.2} />
-              </div>
-            </div>
+            <Bike size={56} strokeWidth={1.1} className="ui-cph" />
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-[#080b0c]/95 via-[#080b0c]/20 to-black/20" />
-          <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
-            <button onClick={abrirEdicionMoto} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-sm text-white/90 backdrop-blur-md transition hover:bg-black/55">
-              <Pencil size={15} /> <span className="hidden sm:inline">Editar moto</span><span className="sm:hidden">Editar</span>
-            </button>
-          </div>
-          <div className="absolute inset-x-0 bottom-0 p-5 sm:p-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">Mi moto</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white drop-shadow sm:text-5xl">
-              {motoNombre}
-            </h1>
-            <p className="mt-1 text-sm text-white/75">{s.moto?.marca ?? 'Bajaj'} · {s.moto?.modelo ?? 'NS160 FI'} · {motoAnio}</p>
-            <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm font-medium text-white/90 backdrop-blur-md">
-              <Gauge size={17} className="text-brand" />
+ 
+          <button type="button" className="ui-cedit" onClick={abrirEdicionMoto}>
+            <Pencil size={15} /> Editar moto
+          </button>
+ 
+          <div className="ui-ctxt">
+            <h1>{motoNombre}</h1>
+            <p>{s.moto?.marca ?? 'Bajaj'} · {s.moto?.modelo ?? 'NS160 FI'} · {motoAnio}</p>
+            <div className="ui-km">
+              <Gauge size={16} />
               {formatKm(s.moto?.kilometrajeActual ?? 0)}
             </div>
           </div>
         </div>
-      </Card>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Card className="!p-4 sm:!p-5">
-          <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand/[0.08] text-brand"><Gauge size={19} /></span>
-            <div><p className="text-xs text-mute">Kilometraje actual</p><p className="mt-1 font-semibold">{formatKm(s.moto?.kilometrajeActual ?? 0)}</p></div>
-          </div>
-        </Card>
-        <Card className="!p-4 sm:!p-5">
-          <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#7bb6ff]/[0.08] text-[#7bb6ff]"><Droplets size={19} /></span>
-            <div><p className="text-xs text-mute">Último cambio de aceite</p><p className="mt-1 font-semibold">{s.moto?.ultimoCambioAceite == null ? 'Sin registrar' : formatKm(s.moto.ultimoCambioAceite)}</p></div>
-          </div>
-        </Card>
-        <Card className="!p-4 sm:!p-5">
-          <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#ffd27b]/[0.08] text-[#ffd27b]"><CalendarDays size={19} /></span>
-            <div><p className="text-xs text-mute">Fecha del cambio</p><p className="mt-1 font-semibold">{formatFecha(s.moto?.fechaUltimoCambioAceite)}</p></div>
-          </div>
-        </Card>
-      </div>
-
-      <section className="space-y-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.16em] text-brand/75">Historial</p>
-            <h2 className="mt-1 text-xl font-semibold tracking-tight">Mantenimientos</h2>
-            <p className="mt-1 text-sm text-mute">Servicios y reparaciones realizados.</p>
-          </div>
-          <button onClick={abrirNuevoMantenimiento} className={btn + ' w-full justify-center sm:w-auto'}>
-            <Plus size={17} /> Registrar mantenimiento
-          </button>
-        </div>
-
-        {s.mantenimientosMoto.length === 0 ? (
-          <Card><Empty t="Aún no hay mantenimientos registrados." /></Card>
-        ) : (
-          <div className="space-y-3">
-            {s.mantenimientosMoto.map(registro => (
-              <Card key={registro.id} className="!p-4 sm:!p-5">
-                <div className="flex items-start gap-3">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand/[0.08] text-brand"><Wrench size={18} /></span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <h3 className="font-semibold">{registro.tipo}</h3>
-                        <p className="mt-1 text-xs text-mute">{formatFecha(registro.fecha)}</p>
-                      </div>
-                      <p className="font-semibold text-brand">{money(registro.costo)}</p>
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-mute">
-                      <span className="inline-flex items-center gap-1.5"><Gauge size={14} /> {formatKm(registro.kilometraje)}</span>
-                    </div>
-                    {registro.notas && <p className="mt-3 border-t border-white/[0.05] pt-3 text-sm leading-relaxed text-mute">{registro.notas}</p>}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-0.5">
-                    <button onClick={() => abrirEdicionMantenimiento(registro)} aria-label="Editar mantenimiento" title="Editar" className="rounded-lg p-2 text-mute transition hover:bg-white/[0.05] hover:text-ink"><Pencil size={15} /></button>
-                    <button onClick={() => confirmarEliminarMantenimiento(registro)} aria-label="Eliminar mantenimiento" title="Eliminar" className="rounded-lg p-2 text-mute transition hover:bg-neg/[0.08] hover:text-neg"><Trash2 size={15} /></button>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.16em] text-brand/75">Gastos</p>
-            <h2 className="mt-1 text-xl font-semibold tracking-tight">Gastos de la moto</h2>
-            <p className="mt-1 text-sm text-mute">Registro de costos asociados.</p>
-          </div>
-          <button onClick={abrirNuevoGasto} className={btn + ' w-full justify-center sm:w-auto'}>
-            <Plus size={17} /> Agregar gasto
-          </button>
-        </div>
-
-        <div className="grid gap-3 lg:grid-cols-[0.8fr_1.2fr]">
-          <Card className="relative isolate overflow-hidden !p-5 sm:!p-6">
-            <div className="pointer-events-none absolute -right-12 -top-16 -z-10 h-40 w-40 rounded-full bg-brand/[0.08] blur-3xl" />
-            <p className="text-sm text-mute">Total de gastos registrados</p>
-            <p className="mt-3 break-words text-3xl font-semibold tracking-tight text-brand">{money(totalGastos)}</p>
-            <p className="mt-2 text-xs text-mute">{s.gastosMoto.length} {s.gastosMoto.length === 1 ? 'registro' : 'registros'}</p>
-          </Card>
-          <Card className="!p-5 sm:!p-6">
-            <div className="mb-4 flex items-center gap-2">
-              <Tag size={17} className="text-brand" />
-              <h3 className="font-semibold">Gastos por categoría</h3>
+ 
+        <div className="ui-facts">
+          <div className="ui-card ui-fact">
+            <span className="ui-ic ui-g"><Gauge size={19} /></span>
+            <div>
+              <small>Kilometraje actual</small>
+              <b>{formatKm(s.moto?.kilometrajeActual ?? 0)}</b>
             </div>
-            {gastosPorCategoria.length === 0 ? (
-              <p className="text-sm text-mute">Las categorías aparecerán al registrar gastos.</p>
-            ) : (
-              <div className="space-y-3">
-                {gastosPorCategoria.map(([categoria, valor]) => (
-                  <div key={categoria}>
-                    <div className="mb-1 flex items-center justify-between gap-3 text-xs">
-                      <span className="truncate text-mute">{categoria}</span>
-                      <span className="shrink-0 text-ink/90">{money(valor)}</span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
-                      <div className="h-full rounded-full bg-brand/75" style={{ width: String((valor / gastoMaximoCategoria) * 100) + '%' }} />
-                    </div>
-                  </div>
-                ))}
+          </div>
+          <div className="ui-card ui-fact">
+            <span className="ui-ic ui-b"><Droplets size={19} /></span>
+            <div>
+              <small>Último cambio de aceite</small>
+              <b>{s.moto?.ultimoCambioAceite == null ? 'Sin registrar' : formatKm(s.moto.ultimoCambioAceite)}</b>
+            </div>
+          </div>
+          <div className="ui-card ui-fact">
+            <span className="ui-ic ui-y"><CalendarDays size={19} /></span>
+            <div>
+              <small>Fecha del cambio</small>
+              <b>{formatFecha(s.moto?.fechaUltimoCambioAceite)}</b>
+            </div>
+          </div>
+        </div>
+      </div>
+ 
+      <div className="ui-mo-cols">
+        <section>
+          <div className="ui-mh">
+            <div>
+              <h2>Mantenimientos</h2>
+              <p>Servicios y reparaciones realizados.</p>
+            </div>
+            <button
+              type="button"
+              className="ui-cta ui-sm"
+              aria-label="Registrar mantenimiento"
+              onClick={abrirNuevoMantenimiento}
+            >
+              <Plus size={16} /> Registrar
+            </button>
+          </div>
+ 
+          {s.mantenimientosMoto.length === 0 ? (
+            <div className="ui-card">
+              <div className="ui-empty">
+                <span className="ui-ic ui-y"><Wrench size={20} /></span>
+                Aún no hay mantenimientos registrados.
               </div>
-            )}
-          </Card>
-        </div>
-
-        <div className="flex items-center gap-2 pt-2">
-          <CircleDollarSign size={18} className="text-brand" />
-          <h3 className="font-semibold">Gastos recientes</h3>
-        </div>
-        {s.gastosMoto.length === 0 ? (
-          <Card><Empty t="Aún no hay gastos registrados." /></Card>
-        ) : (
-          <div className="space-y-2">
-            {s.gastosMoto.slice(0, 10).map(gasto => (
-              <Card key={gasto.id} className="!p-3.5 sm:!p-4">
-                <div className="flex items-center gap-3">
-                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/[0.035] text-mute"><Fuel size={17} /></span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-medium">{gasto.descripcion}</p>
-                      <span className="rounded-full border border-white/[0.06] bg-white/[0.025] px-2 py-0.5 text-[10px] text-mute">{gasto.categoria}</span>
-                    </div>
-                    <p className="mt-1 text-xs text-mute">{formatFecha(gasto.fecha)}</p>
+            </div>
+          ) : (
+            s.mantenimientosMoto.map(registro => (
+              <FilaMoto
+                key={registro.id}
+                icono={<Wrench size={18} />}
+                tono="ui-g"
+                titulo={registro.tipo}
+                detalle={<>{formatFecha(registro.fecha)}<span className="ui-tag">{formatKm(registro.kilometraje)}</span></>}
+                monto={money(registro.costo)}
+                montoColor="var(--ui-brand)"
+                nota={registro.notas}
+              >
+                <button type="button" className="ui-ib" aria-label="Editar mantenimiento" title="Editar" onClick={() => abrirEdicionMantenimiento(registro)}>
+                  <Pencil size={16} />
+                </button>
+                <button type="button" className="ui-ib ui-d" aria-label="Eliminar mantenimiento" title="Eliminar" onClick={() => confirmarEliminarMantenimiento(registro)}>
+                  <Trash2 size={16} />
+                </button>
+              </FilaMoto>
+            ))
+          )}
+        </section>
+ 
+        <section>
+          <div className="ui-mh">
+            <div>
+              <h2>Gastos de la moto</h2>
+              <p>Registro de costos asociados.</p>
+            </div>
+            <button
+              type="button"
+              className="ui-cta ui-sm"
+              aria-label="Agregar gasto"
+              onClick={abrirNuevoGasto}
+            >
+              <Plus size={16} /> Agregar
+            </button>
+          </div>
+ 
+          <div className="ui-card ui-gtot">
+            <small>Total de gastos registrados</small>
+            <b>{money(totalGastos)}</b>
+            <small>{s.gastosMoto.length} {s.gastosMoto.length === 1 ? 'registro' : 'registros'}</small>
+          </div>
+ 
+          <div className="ui-card ui-gcats">
+            <h3><Tag size={17} /> Gastos por categoría</h3>
+            {gastosPorCategoria.length === 0 ? (
+              <p className="ui-sub" style={{ margin: 0 }}>Las categorías aparecerán al registrar gastos.</p>
+            ) : (
+              gastosPorCategoria.map(([categoria, valor]) => (
+                <div key={categoria} className="ui-cr">
+                  <div>
+                    <span>{categoria}</span>
+                    <span>{money(valor)}</span>
                   </div>
-                  <p className="shrink-0 text-sm font-semibold">{money(gasto.valor)}</p>
-                  <div className="flex shrink-0 items-center gap-0.5">
-                    <button onClick={() => abrirEdicionGasto(gasto)} aria-label="Editar gasto" title="Editar" className="rounded-lg p-2 text-mute transition hover:bg-white/[0.05] hover:text-ink"><Pencil size={15} /></button>
-                    <button onClick={() => confirmarEliminarGasto(gasto)} aria-label="Eliminar gasto" title="Eliminar" className="rounded-lg p-2 text-mute transition hover:bg-neg/[0.08] hover:text-neg"><Trash2 size={15} /></button>
+                  <div className="ui-trk">
+                    <i style={{ width: String((valor / gastoMaximoCategoria) * 100) + '%' }} />
                   </div>
                 </div>
-              </Card>
-            ))}
+              ))
+            )}
           </div>
-        )}
-      </section>
+ 
+          <h3 className="ui-sub2"><CircleDollarSign size={18} /> Gastos recientes</h3>
+ 
+          {s.gastosMoto.length === 0 ? (
+            <div className="ui-card">
+              <div className="ui-empty">
+                <span className="ui-ic ui-y"><CircleDollarSign size={20} /></span>
+                Aún no hay gastos registrados.
+              </div>
+            </div>
+          ) : (
+            s.gastosMoto.slice(0, 10).map(gasto => (
+              <FilaMoto
+                key={gasto.id}
+                icono={gasto.categoria === 'Combustible' ? <Fuel size={18} /> : <CircleDollarSign size={18} />}
+                tono="ui-o"
+                titulo={gasto.descripcion}
+                detalle={<>{formatFecha(gasto.fecha)}<span className="ui-tag">{gasto.categoria}</span></>}
+                monto={money(gasto.valor)}
+              >
+                <button type="button" className="ui-ib" aria-label="Editar gasto" title="Editar" onClick={() => abrirEdicionGasto(gasto)}>
+                  <Pencil size={16} />
+                </button>
+                <button type="button" className="ui-ib ui-d" aria-label="Eliminar gasto" title="Eliminar" onClick={() => confirmarEliminarGasto(gasto)}>
+                  <Trash2 size={16} />
+                </button>
+              </FilaMoto>
+            ))
+          )}
+        </section>
+      </div>
 
       {editandoMoto && (
         <Modal title="Información de la moto" onClose={cerrarEdicionMoto}>
@@ -4912,4 +4035,3 @@ export function MotoPage({ s }: { s: Store }) {
     </section>
   )
 }
-

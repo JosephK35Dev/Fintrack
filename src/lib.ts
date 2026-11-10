@@ -125,6 +125,7 @@ export interface Store {
 
   saldo: (id: string) => number
   openMov: (m?: Mov) => void
+  openTransfer: () => void
 
   showAlert: (options: AlertOptions) => void
 
