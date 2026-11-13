@@ -10,6 +10,7 @@ import {
   Settings,
   Bike,
   CheckSquare,
+  BriefcaseBusiness,
   Brain,
   Plus,
 } from 'lucide-react'
@@ -44,6 +45,7 @@ import {
   DashboardMobile,
   TransferModal,
 } from './Pages'
+import { CentroTrabajo } from './WorkCenter'
 
 import { getCarteras } from './services/carteras'
 
@@ -90,6 +92,11 @@ const NAV = {
   ],
 
   productividad: [
+    {
+      id: 'trabajo',
+      label: 'Trabajo',
+      icon: BriefcaseBusiness,
+    },
     {
       id: 'tareas',
       label: 'Tareas',
@@ -614,6 +621,7 @@ export default function App() {
         {page === 'habitos' && <Habitos s={s} />}
         {page === 'moto' && <MotoPage s={s} />}
         {page === 'config' && <Config s={s} />}
+        <CentroTrabajo visible={page === 'trabajo'} />
       </main>
 
       {/* Mobile finance menu */}

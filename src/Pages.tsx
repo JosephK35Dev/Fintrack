@@ -778,7 +778,7 @@ export function MovModal({
           />
         </Field>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="ui-form-2col">
           <Field label="Fecha">
             <input
               className={inp}
@@ -1203,7 +1203,7 @@ export function TransferModal({
           </p>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="ui-form-2col">
           <Field label="Monto">
             <input
               className={inp}
